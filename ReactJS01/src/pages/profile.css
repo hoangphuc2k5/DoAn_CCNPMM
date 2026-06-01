@@ -1,0 +1,136 @@
+/* Profile Container */
+.profile-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.profile-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.profile-col {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .profile-container {
+    padding: 8px;
+  }
+}
+
+/* Profile View Styles */
+.profile-title {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.profile-name h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #262626;
+}
+
+.profile-role {
+  margin: 5px 0 0 0;
+  color: #8c8c8c;
+  font-size: 0.9rem;
+}
+
+.profile-card {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+}
+
+.profile-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.profile-icon {
+  font-size: 1.2rem;
+  color: #1890ff;
+  margin-top: 4px;
+}
+
+.profile-item .label {
+  margin: 0;
+  color: #8c8c8c;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.profile-item .value {
+  margin: 5px 0 0 0;
+  font-size: 1rem;
+  color: #262626;
+}
+
+.profile-bio {
+  padding: 12px;
+  background-color: #fafafa;
+  border-radius: 4px;
+}
+
+.profile-bio h3 {
+  margin: 0 0 10px 0;
+  color: #262626;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.profile-bio p {
+  margin: 0;
+  color: #595959;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* Profile Edit Styles */
+.profile-edit-card {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+}
+
+.profile-form {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.profile-form .ant-form-item {
+  margin-bottom: 16px;
+}
+
+.profile-form .ant-form-item-label > label {
+  font-weight: 500;
+  color: #262626;
+}
+
+.profile-form .ant-input,
+.profile-form .ant-input-textarea textarea,
+.profile-form .ant-select-selector {
+  border-radius: 4px;
+}
+
+.profile-form .ant-input:focus,
+.profile-form .ant-input-textarea textarea:focus,
+.profile-form .ant-select-focused .ant-select-selector {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+
+@media (max-width: 768px) {
+  .profile-title {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .profile-form {
+    max-width: 100%;
+  }
+}
