@@ -1,141 +1,98 @@
-import React, { useContext, useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  UsergroupAddOutlined,
   HomeOutlined,
+  LogoutOutlined,
   SettingOutlined,
+  UsergroupAddOutlined,
 } from "@ant-design/icons";
-import { Menu } from "antd";
-import { Link, useNavigate } from "react-router-dom";
-import { AuthContext } from "../context/auth.context";
+import { Avatar, Button, Menu } from "antd";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
+import { logout } from "../../Redux/authSlice";
 
 const Header = () => {
+  const location = useLocation();
   const navigate = useNavigate();
-  const { auth, setAuth } = useContext(AuthContext);
-  console.log(">>> check auth: ", auth);
+  const dispatch = useDispatch();
+  const { isAuthenticated, user } = useSelector((state) => state.auth);
+  const [current, setCurrent] = useState("home");
+
+  const displayName = user?.name || user?.email || "Tài khoản";
+  const selectedKey = useMemo(() => {
+    if (location.pathname.startsWith("/friends") || location.pathname.startsWith("/user")) return "friends";
+    if (location.pathname.startsWith("/profile")) return "profile";
+    if (location.pathname.startsWith("/login")) return "login";
+    if (location.pathname.startsWith("/register")) return "register";
+    return current;
+  }, [current, location.pathname]);
+
   const items = [
     {
-      label: <Link to={"/"}>Home Page</Link>,
+      label: <Link to="/">Bảng tin</Link>,
       key: "home",
       icon: <HomeOutlined />,
     },
-    ...(auth.isAuthenticated
+    ...(isAuthenticated
       ? [
           {
-import React, { useState } from 'react';
-import { UsergroupAddOutlined, HomeOutlined, SettingOutlined } from '@ant-design/icons';
-import { Menu } from 'antd';
-import { Link, useNavigate } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
-import { logout } from '../../Redux/authSlice';
-
-const Header = () => {
-
-    const navigate = useNavigate();
-    const { auth, setAuth } = useContext(AuthContext);
-    const dispatch = useDispatch();
-    const { isAuthenticated, user } = useSelector((state) => state.auth);
-    const items = [
-        {
-            label: <Link to={"/"}>Home Page</Link>,
-            key: 'home',
-            icon: <HomeOutlined />,
-        },
-        ...(isAuthenticated ? [{
-            label: <Link to={"/user"}>Users</Link>,
-            key: "user",
+            label: <Link to="/friends">Bạn bè</Link>,
+            key: "friends",
             icon: <UsergroupAddOutlined />,
           },
-        ]
-      : []),
-
-    {
-      label: `Welcome ${auth?.user?.email ?? ""}`,
-      key: "SubMenu",
-      icon: <SettingOutlined />,
-      children: [
-        ...(auth.isAuthenticated
-          ? [
-              {
-                label: <Link to={"/profile"}>Profile</Link>,
-                key: "profile",
-              },
-              {
-                label: (
-                  <span
-                    onClick={() => {
-                      localStorage.removeItem("access_token");
-
-                      setAuth({
-                        isAuthenticated: false,
-                        user: {
-                          email: "",
-                          name: "",
-                        },
-                      });
-
-                      navigate("/");
-                    }}
-                  >
-                    Đăng xuất
-                  </span>
-                ),
-                key: "logout",
-              },
-            ]
-          : [
-              {
-                label: <Link to={"/login"}>Đăng nhập</Link>,
-                key: "login",
-              },
-            ]),
-      ],
-    },
-  ];
-        {
-            label: `Welcome ${user?.email ?? ""}`,
-            key: 'SubMenu',
+          {
+            label: <Link to="/profile">Hồ sơ</Link>,
+            key: "profile",
             icon: <SettingOutlined />,
-            children: [
-                ...(isAuthenticated ? [
-                    {
-                        label: <Link to={"/profile"}>Hồ sơ</Link>,
-                        key: 'profile',
-                    },
-                    {
-                        label: <span onClick={() => {
-                            setCurrent("home");
-                            dispatch(logout());
-                            navigate("/");
-                        }}>Đăng xuất</span>,
-                        key: 'logout',
-                    }
-                ] : [
-                    {
-                        label: <Link to={"/login"}>Đăng nhập</Link>,
-                        key: 'login',
-                    }
-                ]),
-            ],
-        },
-    ];
+          },
+        ]
+      : [
+          {
+            label: <Link to="/login">Đăng nhập</Link>,
+            key: "login",
+          },
+          {
+            label: <Link to="/register">Đăng ký</Link>,
+            key: "register",
+          },
+        ]),
+  ];
 
-    const [current, setCurrent] = useState('mail');
-    const onClick = (e) => {
-        setCurrent(e.key);
-    };
-    return <Menu onClick={onClick} selectedKeys={[current]} mode="horizontal" items={items} />;
-  const [current, setCurrent] = useState("mail");
-  const onClick = (e) => {
-    console.log("click ", e);
-    setCurrent(e.key);
-  };
   return (
-    <Menu
-      onClick={onClick}
-      selectedKeys={[current]}
-      mode="horizontal"
-      items={items}
-    />
+    <header className="app-header">
+      <Link to="/" className="app-brand">
+        <span className="app-brand-mark">f</span>
+        <span>Social Feed</span>
+      </Link>
+
+      <Menu
+        className="app-menu"
+        onClick={(event) => setCurrent(event.key)}
+        selectedKeys={[selectedKey]}
+        mode="horizontal"
+        items={items}
+      />
+
+      <div className="app-account">
+        {isAuthenticated ? (
+          <>
+            <Avatar src={user?.avatar}>{displayName[0]}</Avatar>
+            <span className="app-account-name">{displayName}</span>
+            <Button
+              shape="circle"
+              icon={<LogoutOutlined />}
+              onClick={() => {
+                dispatch(logout());
+                navigate("/");
+              }}
+            />
+          </>
+        ) : (
+          <Link to="/login">
+            <Button type="primary">Đăng nhập</Button>
+          </Link>
+        )}
+      </div>
+    </header>
   );
 };
 

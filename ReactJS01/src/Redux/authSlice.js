@@ -121,8 +121,10 @@ const authSlice = createSlice({
         state.error = "";
         state.isAuthenticated = true;
         state.user = {
+          _id: action.payload._id,
           email: action.payload.email,
           name: action.payload.name,
+          avatar: action.payload.avatar,
           createdBy: action.payload.createdBy,
         };
       })

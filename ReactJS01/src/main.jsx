@@ -1,118 +1,100 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
+import { createBrowserRouter, Link, RouterProvider, useRouteError } from "react-router-dom";
+import { Button, Result, Spin } from "antd";
+import { Provider } from "react-redux";
 import App from "./App.jsx";
+import store from "./Redux/store.js";
 import "./styles/global.css";
 
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
-import RegisterPage from "./pages/register.jsx";
-import UserPage from "./pages/user.jsx";
-import HomePage from "./pages/home.jsx";
-import LoginPage from "./pages/login.jsx";
-import ProfilePage from "./pages/profile.jsx";
-import { AuthWrapper } from "./components/context/auth.context.jsx";
+const ForgotPasswordPage = lazy(() => import("./pages/forgot-password.jsx"));
+const HomePage = lazy(() => import("./pages/home.jsx"));
+const LoginPage = lazy(() => import("./pages/login.jsx"));
+const ProfilePage = lazy(() => import("./pages/profile.jsx"));
+const RegisterPage = lazy(() => import("./pages/register.jsx"));
+const UserPage = lazy(() => import("./pages/user.jsx"));
 
-import { Provider } from "react-redux";
-import store from "./redux/store.js";
+const withSuspense = (element) => (
+  <Suspense
+    fallback={
+      <div className="route-loading">
+        <Spin />
+      </div>
+    }
+  >
+    {element}
+  </Suspense>
+);
 
-const router = createBrowserRouter([
+const RouteError = () => {
+  const error = useRouteError();
+
+  return (
+    <div className="route-error">
+      <Result
+        status="error"
+        title="Có lỗi khi tải trang"
+        subTitle={error?.message || "Vui lòng tải lại trang hoặc quay về bảng tin."}
+        extra={
+          <Link to="/">
+            <Button type="primary">Về bảng tin</Button>
+          </Link>
+        }
+      />
+    </div>
+  );
+};
+
+const router = createBrowserRouter(
+  [
+    {
+      path: "/",
+      element: <App />,
+      errorElement: <RouteError />,
+      children: [
+        {
+          index: true,
+          element: withSuspense(<HomePage />),
+        },
+        {
+          path: "friends",
+          element: withSuspense(<UserPage />),
+        },
+        {
+          path: "user",
+          element: withSuspense(<UserPage />),
+        },
+        {
+          path: "profile",
+          element: withSuspense(<ProfilePage />),
+        },
+      ],
+    },
+    {
+      path: "register",
+      element: withSuspense(<RegisterPage />),
+      errorElement: <RouteError />,
+    },
+    {
+      path: "login",
+      element: withSuspense(<LoginPage />),
+      errorElement: <RouteError />,
+    },
+    {
+      path: "forgot-password",
+      element: withSuspense(<ForgotPasswordPage />),
+      errorElement: <RouteError />,
+    },
+  ],
   {
-    path: "/",
-    element: <App />,
-    children: [
-      {
-        index: true,
-        element: <HomePage />,
-      },
-      {
-        path: "user",
-        element: <UserPage />,
-      },
-      {
-        path: "profile",
-        element: <ProfilePage />,
-      },
-    ],
+    future: {
+      v7_startTransition: true,
+    },
   },
-  {
-    path: "register",
-    element: <RegisterPage />,
-  },
-  {
-    path: "login",
-    element: <LoginPage />,
-  },
-]);
+);
 
 ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <Provider store={store}>
-      <AuthWrapper>
-        <RouterProvider router={router} />
-      </AuthWrapper>
-    </Provider>
-  </React.StrictMode>,
+  <Provider store={store}>
+    <RouterProvider router={router} />
+  </Provider>,
 );
-import {
-    createBrowserRouter,
-    RouterProvider,
-} from "react-router-dom";
-import RegisterPage from './pages/register.jsx';
-import UserPage from './pages/user.jsx';
-import HomePage from './pages/home.jsx';
-import LoginPage from './pages/login.jsx';
-import { AuthWrapper } from './components/context/auth.context.jsx';
-import { Provider } from 'react-redux';
-import { store } from './redux/store.js';
-import ForgotPasswordPage from './pages/forgot-password.jsx';
-import ProfilePage from './pages/profile.jsx';
-import { Provider } from 'react-redux';
-import store from './Redux/store.js';
-
-const router = createBrowserRouter([
-    {
-        path: "/",
-        element: <App />,
-        children: [
-            {
-                index: true,
-                element: <HomePage />
-            },
-            {
-                path: "user",
-                element: <UserPage />
-            },
-        ]
-    },
-    {
-        path: "register",
-        element: <RegisterPage />
-    },
-    {
-        path: "login",
-        element: <LoginPage />
-    },
-], {
-    future: {
-        v7_startTransition: true
-    }
-});
-    {
-        path: "forgot-password",
-        element: <ForgotPasswordPage />
-    },
-    {
-        path: "profile",
-        element: <ProfilePage />
-    },
-]);
-
-ReactDOM.createRoot(document.getElementById('root')).render(
-    <React.StrictMode>
-        <Provider store={store}>
-            <AuthWrapper>
-                <RouterProvider router={router} />
-            </AuthWrapper>
-            <RouterProvider router={router} />
-        </Provider>
-    </React.StrictMode>,
-)
