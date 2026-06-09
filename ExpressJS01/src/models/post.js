@@ -35,6 +35,11 @@ const postSchema = new mongoose.Schema(
       ref: "post",
       default: null,
     },
+    media: [
+      {
+        type: String,
+      },
+    ],
     stats: {
       reactions: { type: Number, default: 0 },
       comments: { type: Number, default: 0 },

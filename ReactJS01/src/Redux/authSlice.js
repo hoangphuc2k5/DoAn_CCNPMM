@@ -127,6 +127,7 @@ const authSlice = createSlice({
           avatar: action.payload.avatar,
           createdBy: action.payload.createdBy,
         };
+        
       })
       .addCase(fetchAccountThunk.rejected, (state, action) => {
         state.appLoading = false;

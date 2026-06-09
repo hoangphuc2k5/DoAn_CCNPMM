@@ -1,8 +1,15 @@
 import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
-import { createBrowserRouter, Link, RouterProvider, useRouteError } from "react-router-dom";
+import {
+  createBrowserRouter,
+  Link,
+  RouterProvider,
+  useRouteError,
+  Navigate,
+} from "react-router-dom";
 import { Button, Result, Spin } from "antd";
 import { Provider } from "react-redux";
+import { useSelector } from "react-redux";
 import App from "./App.jsx";
 import store from "./Redux/store.js";
 import "./styles/global.css";
@@ -10,9 +17,9 @@ import "./styles/global.css";
 const ForgotPasswordPage = lazy(() => import("./pages/forgot-password.jsx"));
 const HomePage = lazy(() => import("./pages/home.jsx"));
 const LoginPage = lazy(() => import("./pages/login.jsx"));
-const ProfilePage = lazy(() => import("./pages/profile.jsx"));
 const RegisterPage = lazy(() => import("./pages/register.jsx"));
 const UserPage = lazy(() => import("./pages/user.jsx"));
+const UserProfilePage = lazy(() => import("./pages/user-profile.jsx"));
 
 const withSuspense = (element) => (
   <Suspense
@@ -26,6 +33,14 @@ const withSuspense = (element) => (
   </Suspense>
 );
 
+const ProfileRedirect = () => {
+  const { user } = useSelector((state) => state.auth);
+  if (user?._id) {
+    return <Navigate to={`/profile/${user._id}`} replace />;
+  }
+  return <Navigate to="/login" replace />;
+};
+
 const RouteError = () => {
   const error = useRouteError();
 
@@ -34,7 +49,9 @@ const RouteError = () => {
       <Result
         status="error"
         title="Có lỗi khi tải trang"
-        subTitle={error?.message || "Vui lòng tải lại trang hoặc quay về bảng tin."}
+        subTitle={
+          error?.message || "Vui lòng tải lại trang hoặc quay về bảng tin."
+        }
         extra={
           <Link to="/">
             <Button type="primary">Về bảng tin</Button>
@@ -66,7 +83,11 @@ const router = createBrowserRouter(
         },
         {
           path: "profile",
-          element: withSuspense(<ProfilePage />),
+          element: <ProfileRedirect />,
+        },
+        {
+          path: "profile/:userId",
+          element: withSuspense(<UserProfilePage />),
         },
       ],
     },

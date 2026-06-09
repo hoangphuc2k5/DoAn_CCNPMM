@@ -34,7 +34,7 @@ import {
   UserAddOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import {
   blockUserApi,
@@ -53,6 +53,7 @@ import {
   reportPostApi,
   sharePostApi,
 } from "../util/api";
+import { getMediaUrl } from "../util/media";
 
 const reactionOptions = [
   { value: "like", label: "Like" },
@@ -78,7 +79,9 @@ const notificationText = {
 };
 
 const HomePage = () => {
+  const navigate = useNavigate();
   const { isAuthenticated, user } = useSelector((state) => state.auth);
+  const userProfile = useSelector((state) => state.userProfile.profileUser);
   const [mode, setMode] = useState("latest");
   const [posts, setPosts] = useState([]);
   const [page, setPage] = useState(1);
@@ -149,7 +152,9 @@ const HomePage = () => {
   );
 
   const updatePost = (postId, updater) => {
-    setPosts((prev) => prev.map((post) => (post._id === postId ? updater(post) : post)));
+    setPosts((prev) =>
+      prev.map((post) => (post._id === postId ? updater(post) : post)),
+    );
   };
 
   const handleCreatePost = async () => {
@@ -291,7 +296,10 @@ const HomePage = () => {
     if (!hasPost) {
       const res = await getPostByIdApi(postId);
       if (res?.EC === 0) {
-        setPosts((prev) => [res.data, ...prev.filter((post) => post._id !== postId)]);
+        setPosts((prev) => [
+          res.data,
+          ...prev.filter((post) => post._id !== postId),
+        ]);
       } else {
         message.error(res?.EM || "Không thể mở bài viết từ thông báo");
         return;
@@ -311,8 +319,8 @@ const HomePage = () => {
         <Card className="social-guest-card">
           <Typography.Title level={2}>Social Feed</Typography.Title>
           <Typography.Paragraph>
-            Đăng nhập để sử dụng feed, react, comment, theo dõi, kết bạn, report và thông báo
-            gần realtime.
+            Đăng nhập để sử dụng feed, react, comment, theo dõi, kết bạn, report
+            và thông báo gần realtime.
           </Typography.Paragraph>
           <Space>
             <Link to="/login">
@@ -383,7 +391,11 @@ const HomePage = () => {
         <Card className="social-panel">
           <Space direction="vertical" size={14} style={{ width: "100%" }}>
             <div className="social-profile-row">
-              <Avatar size={42} src={user?.avatar} icon={<UserOutlined />}>
+              <Avatar
+                size={42}
+                src={getMediaUrl(userProfile?.avatar)}
+                icon={<UserOutlined />}
+              >
                 {displayName[0]}
               </Avatar>
               <div className="min-w-0">
@@ -396,7 +408,10 @@ const HomePage = () => {
             <Link className="social-nav-item" to="/">
               <HomeOutlined /> Bảng tin
             </Link>
-            <button className="social-nav-item" onClick={() => setNotificationOpen(true)}>
+            <button
+              className="social-nav-item"
+              onClick={() => setNotificationOpen(true)}
+            >
               <BellOutlined /> Thông báo
               {unread ? <Badge count={unread} size="small" /> : null}
             </button>
@@ -410,9 +425,14 @@ const HomePage = () => {
       <main className="social-feed">
         <Card className="composer-card">
           <div className="composer-head">
-            <Avatar size={44} src={user?.avatar} icon={<UserOutlined />}>
+            <Avatar
+              size={44}
+              src={getMediaUrl(userProfile?.avatar)}
+              icon={<UserOutlined />}
+            >
               {displayName[0]}
             </Avatar>
+
             <Input
               className="composer-pill"
               value={postContent}
@@ -440,19 +460,29 @@ const HomePage = () => {
               ]}
               style={{ width: 148 }}
             />
-            <Button type="primary" onClick={handleCreatePost} disabled={!postContent.trim()}>
+            <Button
+              type="primary"
+              onClick={handleCreatePost}
+              disabled={!postContent.trim()}
+            >
               Đăng bài
             </Button>
           </div>
         </Card>
 
         <div className="feed-toolbar">
-          <Radio.Group value={mode} onChange={(event) => setMode(event.target.value)}>
+          <Radio.Group
+            value={mode}
+            onChange={(event) => setMode(event.target.value)}
+          >
             <Radio.Button value="latest">Mới nhất</Radio.Button>
             <Radio.Button value="algorithm">Gợi ý</Radio.Button>
             <Radio.Button value="friends">Bạn bè</Radio.Button>
           </Radio.Group>
-          <Button icon={<BellOutlined />} onClick={() => setNotificationOpen(true)}>
+          <Button
+            icon={<BellOutlined />}
+            onClick={() => setNotificationOpen(true)}
+          >
             <Badge count={unread} offset={[10, -6]}>
               Thông báo
             </Badge>
@@ -468,12 +498,22 @@ const HomePage = () => {
                 className={`post-card ${highlightedPostId === post._id ? "post-card-highlight" : ""}`}
               >
                 <div className="post-head">
-                  <Space align="start">
-                    <Avatar size={44} src={post.author?.avatar} icon={<UserOutlined />}>
+                  <Space
+                    align="start"
+                    style={{ cursor: "pointer" }}
+                    onClick={() => navigate(`/profile/${post.author?._id}`)}
+                  >
+                    <Avatar
+                      size={44}
+                      src={getMediaUrl(post.author?.avatar)}
+                      icon={<UserOutlined />}
+                    >
                       {post.author?.name?.[0] || "U"}
                     </Avatar>
                     <div>
-                      <Typography.Text strong>{post.author?.name}</Typography.Text>
+                      <Typography.Text strong>
+                        {post.author?.name}
+                      </Typography.Text>
                       <div className="post-meta">
                         {new Date(post.createdAt).toLocaleString("vi-VN")} ·{" "}
                         {post.visibility === "friends" ? "Bạn bè" : "Công khai"}
@@ -481,7 +521,11 @@ const HomePage = () => {
                     </div>
                   </Space>
                   <Dropdown menu={renderPostMenu(post)} trigger={["click"]}>
-                    <Button shape="circle" type="text" icon={<EllipsisOutlined />} />
+                    <Button
+                      shape="circle"
+                      type="text"
+                      icon={<EllipsisOutlined />}
+                    />
                   </Dropdown>
                 </div>
 
@@ -512,11 +556,14 @@ const HomePage = () => {
 
                 <div className="post-stats">
                   <span>
-                    <LikeFilled className={post.myReaction ? "active-like" : ""} />{" "}
+                    <LikeFilled
+                      className={post.myReaction ? "active-like" : ""}
+                    />{" "}
                     {post.stats?.reactions || 0} reaction
                   </span>
                   <span>
-                    {post.stats?.comments || 0} bình luận · {post.stats?.shares || 0} chia sẻ
+                    {post.stats?.comments || 0} bình luận ·{" "}
+                    {post.stats?.shares || 0} chia sẻ
                   </span>
                 </div>
 
@@ -537,7 +584,11 @@ const HomePage = () => {
                   <Button type="text" icon={<CommentOutlined />}>
                     Bình luận
                   </Button>
-                  <Button type="text" icon={<RetweetOutlined />} onClick={() => handleShare(post._id)}>
+                  <Button
+                    type="text"
+                    icon={<RetweetOutlined />}
+                    onClick={() => handleShare(post._id)}
+                  >
                     Chia sẻ
                   </Button>
                 </div>
@@ -570,16 +621,30 @@ const HomePage = () => {
                     <List.Item
                       id={`comment-${comment._id}`}
                       className={`comment-item ${
-                        highlightedCommentId === comment._id ? "comment-item-highlight" : ""
+                        highlightedCommentId === comment._id
+                          ? "comment-item-highlight"
+                          : ""
                       }`}
                     >
                       <div className="comment-thread">
-                        <Space align="start">
-                          <Avatar size={32} src={comment.author?.avatar} icon={<UserOutlined />}>
+                        <Space
+                          align="start"
+                          style={{ cursor: "pointer" }}
+                          onClick={() =>
+                            navigate(`/profile/${comment.author?._id}`)
+                          }
+                        >
+                          <Avatar
+                            size={32}
+                            src={comment.author?.avatar}
+                            icon={<UserOutlined />}
+                          >
                             {comment.author?.name?.[0] || "U"}
                           </Avatar>
                           <div className="comment-bubble">
-                            <Typography.Text strong>{comment.author?.name}</Typography.Text>
+                            <Typography.Text strong>
+                              {comment.author?.name}
+                            </Typography.Text>
                             <Typography.Paragraph className="mb-0">
                               {comment.content}
                             </Typography.Paragraph>
@@ -593,14 +658,26 @@ const HomePage = () => {
                               id={`comment-${reply._id}`}
                               align="start"
                               className={`reply-row ${
-                                highlightedCommentId === reply._id ? "comment-item-highlight" : ""
+                                highlightedCommentId === reply._id
+                                  ? "comment-item-highlight"
+                                  : ""
                               }`}
+                              style={{ cursor: "pointer" }}
+                              onClick={() =>
+                                navigate(`/profile/${reply.author?._id}`)
+                              }
                             >
-                              <Avatar size={26} src={reply.author?.avatar} icon={<UserOutlined />}>
+                              <Avatar
+                                size={26}
+                                src={reply.author?.avatar}
+                                icon={<UserOutlined />}
+                              >
                                 {reply.author?.name?.[0] || "U"}
                               </Avatar>
                               <div className="reply-bubble">
-                                <Typography.Text strong>{reply.author?.name}</Typography.Text>
+                                <Typography.Text strong>
+                                  {reply.author?.name}
+                                </Typography.Text>
                                 <Typography.Paragraph className="mb-0">
                                   {reply.content}
                                 </Typography.Paragraph>
@@ -616,10 +693,16 @@ const HomePage = () => {
                                   [comment._id]: event.target.value,
                                 }))
                               }
-                              onPressEnter={() => handleReply(post._id, comment._id)}
+                              onPressEnter={() =>
+                                handleReply(post._id, comment._id)
+                              }
                               placeholder="Trả lời bình luận..."
                             />
-                            <Button onClick={() => handleReply(post._id, comment._id)}>Trả lời</Button>
+                            <Button
+                              onClick={() => handleReply(post._id, comment._id)}
+                            >
+                              Trả lời
+                            </Button>
                           </Space.Compact>
                         </div>
                       </div>
@@ -655,7 +738,9 @@ const HomePage = () => {
                 </Tag>
               ))
             ) : (
-              <Typography.Text type="secondary">Chưa có chủ đề nổi bật</Typography.Text>
+              <Typography.Text type="secondary">
+                Chưa có chủ đề nổi bật
+              </Typography.Text>
             )}
           </Space>
         </Card>
@@ -681,13 +766,19 @@ const HomePage = () => {
           locale={{ emptyText: "Chưa có thông báo" }}
           renderItem={(item) => (
             <List.Item
-              className={item.readAt ? "notification-item" : "notification-item unread"}
+              className={
+                item.readAt ? "notification-item" : "notification-item unread"
+              }
               onClick={() => handleReadNotification(item)}
             >
               <Badge dot={!item.readAt}>
                 <div>
-                  <Typography.Text strong>{item.actor?.name || "Hệ thống"} </Typography.Text>
-                  <Typography.Text>{notificationText[item.type] || item.type}</Typography.Text>
+                  <Typography.Text strong>
+                    {item.actor?.name || "Hệ thống"}{" "}
+                  </Typography.Text>
+                  <Typography.Text>
+                    {notificationText[item.type] || item.type}
+                  </Typography.Text>
                   <div className="social-muted">
                     {new Date(item.createdAt).toLocaleString("vi-VN")}
                   </div>

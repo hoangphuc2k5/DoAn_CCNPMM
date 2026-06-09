@@ -9,17 +9,23 @@ import { Avatar, Button, Menu } from "antd";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { logout } from "../../Redux/authSlice";
+import { getMediaUrl } from "../../util/media";
 
 const Header = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { isAuthenticated, user } = useSelector((state) => state.auth);
+  const userProfile = useSelector((state) => state.userProfile.profileUser);
   const [current, setCurrent] = useState("home");
 
   const displayName = user?.name || user?.email || "Tài khoản";
   const selectedKey = useMemo(() => {
-    if (location.pathname.startsWith("/friends") || location.pathname.startsWith("/user")) return "friends";
+    if (
+      location.pathname.startsWith("/friends") ||
+      location.pathname.startsWith("/user")
+    )
+      return "friends";
     if (location.pathname.startsWith("/profile")) return "profile";
     if (location.pathname.startsWith("/login")) return "login";
     if (location.pathname.startsWith("/register")) return "register";
@@ -75,8 +81,18 @@ const Header = () => {
       <div className="app-account">
         {isAuthenticated ? (
           <>
-            <Avatar src={user?.avatar}>{displayName[0]}</Avatar>
-            <span className="app-account-name">{displayName}</span>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                cursor: "pointer",
+              }}
+              onClick={() => navigate(`/profile/${user._id}`)}
+            >
+              <Avatar src={getMediaUrl(userProfile?.avatar)}>{displayName[0]}</Avatar>
+              <span className="app-account-name">{displayName}</span>
+            </div>
             <Button
               shape="circle"
               icon={<LogoutOutlined />}

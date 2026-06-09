@@ -9,6 +9,7 @@ import {
   fetchProfile,
   updateProfile,
 } from "../Redux/profileSlice";
+import { getMediaUrl } from "../util/media";
 import "./profile.css";
 
 const ProfilePage = () => {
@@ -70,7 +71,11 @@ const ProfilePage = () => {
         className="profile-card"
         title={
           <div className="profile-title">
-            <Avatar size={64} src={user?.avatar} icon={<UserOutlined />} />
+            <Avatar
+              size={64}
+              src={getMediaUrl(user?.avatar)}
+              icon={<UserOutlined />}
+            />
             <div className="profile-name">
               <h2>{user?.name || "Người dùng"}</h2>
               <p className="profile-role">{user?.email}</p>

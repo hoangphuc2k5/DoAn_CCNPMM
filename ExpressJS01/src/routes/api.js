@@ -8,9 +8,11 @@ const {
   handleLogin,
   updateProfile,
 } = require("../controllers/userController");
+const profileController = require("../controllers/profileController");
 const socialController = require("../controllers/socialController");
 const auth = require("../middleware/auth");
 const delay = require("../middleware/delay");
+const upload = require("../middleware/upload");
 
 const routerAPI = express.Router();
 
@@ -27,6 +29,26 @@ routerAPI.get("/account", delay, getAccount);
 routerAPI.get("/profile", delay, getProfile);
 routerAPI.put("/profile", updateProfile);
 
+// Profile routes - specific routes must be defined before generic :userId route
+routerAPI.put("/profile/me", profileController.updateProfile);
+routerAPI.put(
+  "/profile/me/avatar",
+  upload.single("avatar"),
+  profileController.uploadAvatar,
+);
+routerAPI.put(
+  "/profile/me/cover",
+  upload.single("cover"),
+  profileController.uploadCover,
+);
+
+// Generic profile route - must be last
+routerAPI.get("/profile/:userId", profileController.getProfile);
+routerAPI.get("/profile/:userId/posts", profileController.getUserPosts);
+routerAPI.get("/profile/:userId/friends", profileController.getUserFriends);
+routerAPI.get("/profile/:userId/followers", profileController.getUserFollowers);
+routerAPI.get("/profile/:userId/media", profileController.getUserMedia);
+
 routerAPI.post("/posts", socialController.createPost);
 routerAPI.get("/feed", socialController.getFeed);
 routerAPI.get("/posts/:postId", socialController.getPostById);
@@ -41,14 +63,26 @@ routerAPI.post("/posts/:postId/report", socialController.reportPost);
 
 routerAPI.post("/users/:targetUserId/follow", socialController.followUser);
 routerAPI.delete("/users/:targetUserId/follow", socialController.unfollowUser);
-routerAPI.post("/users/:targetUserId/friend-request", socialController.sendFriendRequest);
-routerAPI.post("/friend-requests/:requestId/respond", socialController.respondFriendRequest);
+routerAPI.post(
+  "/users/:targetUserId/friend-request",
+  socialController.sendFriendRequest,
+);
+routerAPI.post(
+  "/friend-requests/:requestId/respond",
+  socialController.respondFriendRequest,
+);
 routerAPI.post("/users/:targetUserId/block", socialController.blockUser);
 routerAPI.delete("/users/:targetUserId/block", socialController.unblockUser);
 routerAPI.post("/users/:targetUserId/report", socialController.reportUser);
 
 routerAPI.get("/notifications", socialController.getNotifications);
-routerAPI.patch("/notifications/:notificationId/read", socialController.markNotificationRead);
-routerAPI.patch("/notifications/read-all", socialController.markAllNotificationsRead);
+routerAPI.patch(
+  "/notifications/:notificationId/read",
+  socialController.markNotificationRead,
+);
+routerAPI.patch(
+  "/notifications/read-all",
+  socialController.markAllNotificationsRead,
+);
 
 module.exports = routerAPI;

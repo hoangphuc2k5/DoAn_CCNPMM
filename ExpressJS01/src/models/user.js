@@ -18,6 +18,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    coverPhoto: {
+      type: String,
+      default: "",
+    },
     bio: {
       type: String,
       default: "",
