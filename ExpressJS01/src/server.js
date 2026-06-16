@@ -6,7 +6,11 @@ const apiRoutes = require("./routes/api");
 const connection = require("./config/database");
 const { getHomepage } = require("./controllers/homeController");
 const cors = require("cors");
+const http = require("http");
+const { initSocket } = require("./services/socketService");
 const app = express(); //cấu hình app là express
+const server = http.createServer(app);
+initSocket(server);
 //cấu hình port, nếu thấy port trong env, không thì trả về 8888
 const port = process.env.PORT || 8888;
 app.use(cors()); //config cors
@@ -25,7 +29,7 @@ app.use("/v1/api/", apiRoutes);
     //kết nối database using mongoose
     await connection();
     //lắng nghe port trong env
-    app.listen(port, () => {
+    server.listen(port, () => {
       console.log(`Backend Nodejs App listening on port ${port}`);
     });
   } catch (error) {

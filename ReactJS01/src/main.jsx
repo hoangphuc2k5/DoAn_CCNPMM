@@ -13,6 +13,7 @@ import { useSelector } from "react-redux";
 import App from "./App.jsx";
 import store from "./Redux/store.js";
 import "./styles/global.css";
+import { SocketProvider } from "./components/context/socket.context.jsx";
 
 const ForgotPasswordPage = lazy(() => import("./pages/forgot-password.jsx"));
 const HomePage = lazy(() => import("./pages/home.jsx"));
@@ -20,6 +21,8 @@ const LoginPage = lazy(() => import("./pages/login.jsx"));
 const RegisterPage = lazy(() => import("./pages/register.jsx"));
 const UserPage = lazy(() => import("./pages/user.jsx"));
 const UserProfilePage = lazy(() => import("./pages/user-profile.jsx"));
+const SearchPage = lazy(() => import("./pages/search.jsx"));
+const ChatPage = lazy(() => import("./pages/chat.jsx"));
 
 const withSuspense = (element) => (
   <Suspense
@@ -89,6 +92,14 @@ const router = createBrowserRouter(
           path: "profile/:userId",
           element: withSuspense(<UserProfilePage />),
         },
+        {
+          path: "search",
+          element: withSuspense(<SearchPage />),
+        },
+        {
+          path: "chat",
+          element: withSuspense(<ChatPage />),
+        },
       ],
     },
     {
@@ -116,6 +127,8 @@ const router = createBrowserRouter(
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <Provider store={store}>
-    <RouterProvider router={router} />
+    <SocketProvider>
+      <RouterProvider router={router} />
+    </SocketProvider>
   </Provider>,
 );

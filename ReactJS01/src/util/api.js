@@ -58,6 +58,20 @@ const getTrendingApi = () => axios.get("/v1/api/trending");
 
 const searchApi = (q) => axios.get("/v1/api/search", { params: { q } });
 
+const getConversationsApi = () => axios.get("/v1/api/conversations");
+
+const createConversationApi = (payload) => axios.post("/v1/api/conversations", payload);
+
+const getMessagesApi = (conversationId, params) =>
+  axios.get(`/v1/api/conversations/${conversationId}/messages`, { params });
+
+const sendMessageApi = (conversationId, payload) =>
+  axios.post(`/v1/api/conversations/${conversationId}/messages`, payload);
+
+const recallMessageApi = (messageId) => axios.delete(`/v1/api/messages/${messageId}`);
+
+const markSeenApi = (conversationId) => axios.post(`/v1/api/conversations/${conversationId}/seen`);
+
 export {
   blockUserApi,
   commentPostApi,
@@ -85,4 +99,10 @@ export {
   sharePostApi,
   unblockUserApi,
   unfollowUserApi,
+  getConversationsApi,
+  createConversationApi,
+  getMessagesApi,
+  sendMessageApi,
+  recallMessageApi,
+  markSeenApi,
 };

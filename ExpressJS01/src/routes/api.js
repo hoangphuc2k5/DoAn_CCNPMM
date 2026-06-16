@@ -10,9 +10,12 @@ const {
 } = require("../controllers/userController");
 const profileController = require("../controllers/profileController");
 const socialController = require("../controllers/socialController");
+const searchRouter = require("./search");
 const auth = require("../middleware/auth");
 const delay = require("../middleware/delay");
 const upload = require("../middleware/upload");
+const chatController = require("../controllers/chatController");
+const chatUpload = require("../middleware/chatUpload");
 
 const routerAPI = express.Router();
 
@@ -53,7 +56,7 @@ routerAPI.post("/posts", socialController.createPost);
 routerAPI.get("/feed", socialController.getFeed);
 routerAPI.get("/posts/:postId", socialController.getPostById);
 routerAPI.get("/trending", socialController.getTrendingTopics);
-routerAPI.get("/search", socialController.search);
+routerAPI.use("/search", searchRouter);
 routerAPI.get("/relationships", socialController.getRelationships);
 routerAPI.post("/posts/:postId/react", socialController.reactPost);
 routerAPI.post("/posts/:postId/comments", socialController.commentPost);
@@ -84,5 +87,17 @@ routerAPI.patch(
   "/notifications/read-all",
   socialController.markAllNotificationsRead,
 );
+
+// Chat routes
+routerAPI.get("/conversations", chatController.getConversations);
+routerAPI.post("/conversations", chatController.createConversation);
+routerAPI.get("/conversations/:conversationId/messages", chatController.getMessages);
+routerAPI.post(
+  "/conversations/:conversationId/messages",
+  chatUpload.array("attachments", 10),
+  chatController.sendMessage
+);
+routerAPI.delete("/messages/:messageId", chatController.recallMessage);
+routerAPI.post("/conversations/:conversationId/seen", chatController.markSeen);
 
 module.exports = routerAPI;

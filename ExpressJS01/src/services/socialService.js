@@ -549,35 +549,6 @@ const getRelationships = async (userId) => {
   };
 };
 
-const search = async (userId, keyword = "") => {
-  const q = keyword.trim();
-  if (!q) return { EC: 0, data: { posts: [], users: [] } };
-
-  const blockedUserIds = await getBlockedUserIds(userId);
-  const normalized = q.replace(/^#/, "").replace(/^@/, "");
-  const pattern = new RegExp(escapeRegex(normalized), "i");
-  const [posts, users] = await Promise.all([
-    Post.find({
-      author: { $nin: blockedUserIds.map(toObjectId) },
-      $or: [
-        { content: pattern },
-        { hashtags: pattern },
-      ],
-    })
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .populate("author", "name email avatar"),
-    User.find({
-      _id: { $nin: [...blockedUserIds, String(userId)].map(toObjectId) },
-      $or: [{ name: pattern }, { email: pattern }],
-    })
-      .select("-password")
-      .limit(10),
-  ]);
-
-  return { EC: 0, data: { posts, users } };
-};
-
 const getNotifications = async (userId, page = 1, limit = 20) => {
   const data = await Notification.find({ recipient: userId })
     .sort({ createdAt: -1 })
@@ -619,7 +590,6 @@ module.exports = {
   reactPost,
   reportTarget,
   respondFriendRequest,
-  search,
   sendFriendRequest,
   sharePost,
   unblockUser,

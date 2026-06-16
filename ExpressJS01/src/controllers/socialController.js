@@ -116,11 +116,6 @@ const getTrendingTopics = async (req, res) => {
   return res.status(200).json(data);
 };
 
-const search = async (req, res) => {
-  const data = await socialService.search(currentUserId(req), req.query.q || "");
-  return res.status(200).json(data);
-};
-
 const getRelationships = async (req, res) => {
   const data = await socialService.getRelationships(currentUserId(req));
   return res.status(200).json(data);
@@ -165,7 +160,6 @@ module.exports = {
   reportPost,
   reportUser,
   respondFriendRequest,
-  search,
   sendFriendRequest,
   sharePost,
   unblockUser,
