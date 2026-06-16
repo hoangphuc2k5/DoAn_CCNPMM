@@ -12,6 +12,7 @@ import {
   Empty,
   Spin,
   message,
+  Menu,
 } from "antd";
 import {
   UserOutlined,
@@ -21,8 +22,13 @@ import {
   ArrowLeftOutlined,
   UserAddOutlined,
   CheckOutlined,
+  GlobalOutlined,
+  LikeFilled,
+  LikeOutlined,
+  CommentOutlined,
+  RetweetOutlined,
 } from "@ant-design/icons";
-import { searchApi, followUserApi, friendRequestApi } from "../util/api";
+import { searchApi, followUserApi, friendRequestApi, getTrendingApi } from "../util/api";
 import { getMediaUrl } from "../util/media";
 
 const { Title, Text, Paragraph } = Typography;
@@ -31,8 +37,9 @@ const SearchPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const query = searchParams.get("q") || "";
-  
+
   const [loading, setLoading] = useState(false);
+  const [trending, setTrending] = useState([]);
   const [results, setResults] = useState({
     users: [],
     posts: [],
@@ -62,9 +69,22 @@ const SearchPage = () => {
     }
   };
 
+  const loadTrending = async () => {
+    try {
+      const res = await getTrendingApi();
+      if (res?.EC === 0) setTrending(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchResults();
   }, [query]);
+
+  useEffect(() => {
+    loadTrending();
+  }, []);
 
   const handleFollow = async (userId) => {
     try {
@@ -147,7 +167,7 @@ const SearchPage = () => {
           <List.Item
             actions={[
               <Button key="join" type="primary" size="small">
-                Tham gia nhóm
+                Tham gia
               </Button>,
             ]}
           >
@@ -166,7 +186,7 @@ const SearchPage = () => {
                   <Paragraph ellipsis={{ rows: 1 }} style={{ marginBottom: 4 }}>
                     {item.description || "Chưa có mô tả nhóm"}
                   </Paragraph>
-                  <Text type="secondary" size="small">
+                  <Text type="secondary" style={{ fontSize: "12px" }}>
                     {item.members?.length || 0} thành viên
                   </Text>
                 </div>
@@ -182,7 +202,7 @@ const SearchPage = () => {
     const data = limit ? results.hashtags.slice(0, limit) : results.hashtags;
     if (!data.length) return <Empty description="Không tìm thấy hashtag nào" />;
     return (
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", padding: "8px 0" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", padding: "8px 0" }}>
         {data.map((item) => (
           <Link key={item.name} to={`/search?q=${encodeURIComponent(item.name)}`}>
             <Tag color="blue" style={{ padding: "6px 12px", fontSize: "14px", cursor: "pointer" }}>
@@ -203,34 +223,38 @@ const SearchPage = () => {
         renderItem={(item) => (
           <Card
             key={item._id}
+            className="post-card"
             style={{ marginBottom: "16px" }}
-            bodyStyle={{ padding: "16px" }}
-            hoverable
           >
-            <div style={{ display: "flex", gap: "12px", marginBottom: "12px" }}>
-              <Avatar
-                src={getMediaUrl(item.author?.avatar)}
-                icon={<UserOutlined />}
-                size={40}
+            <div className="post-head" style={{ marginBottom: "12px" }}>
+              <Space
+                align="start"
                 style={{ cursor: "pointer" }}
                 onClick={() => navigate(`/profile/${item.author?._id}`)}
-              />
-              <div>
-                <Link to={`/profile/${item.author?._id}`} style={{ fontWeight: "bold", color: "inherit" }}>
-                  {item.author?.name}
-                </Link>
-                <div style={{ fontSize: "12px", color: "gray" }}>
-                  {new Date(item.createdAt).toLocaleString("vi-VN")}
+              >
+                <Avatar
+                  src={getMediaUrl(item.author?.avatar)}
+                  icon={<UserOutlined />}
+                  size={44}
+                />
+                <div>
+                  <Typography.Text strong style={{ display: "block" }}>
+                    {item.author?.name}
+                  </Typography.Text>
+                  <div className="post-meta">
+                    {new Date(item.createdAt).toLocaleString("vi-VN")} ·{" "}
+                    {item.visibility === "friends" ? "Bạn bè" : "Công khai"}
+                  </div>
                 </div>
-              </div>
+              </Space>
             </div>
-            
-            <Paragraph style={{ fontSize: "14px", whiteSpace: "pre-line" }}>
+
+            <Typography.Paragraph className="post-content">
               {item.content}
-            </Paragraph>
+            </Typography.Paragraph>
 
             {item.hashtags?.length ? (
-              <Space wrap style={{ marginBottom: "8px" }}>
+              <Space wrap className="post-tags" style={{ marginBottom: "8px" }}>
                 {item.hashtags.map((tag) => (
                   <Tag key={tag} color="blue">
                     #{tag}
@@ -238,80 +262,32 @@ const SearchPage = () => {
                 ))}
               </Space>
             ) : null}
+
+            <div className="post-stats">
+              <span>
+                <LikeFilled className="active-like" /> {item.stats?.reactions || 0} reaction
+              </span>
+              <span>
+                {item.stats?.comments || 0} bình luận · {item.stats?.shares || 0} chia sẻ
+              </span>
+            </div>
+
+            <div className="post-actions">
+              <Button type="text" icon={<LikeOutlined />}>Like</Button>
+              <Button
+                type="text"
+                icon={<CommentOutlined />}
+                onClick={() => navigate(`/profile/${item.author?._id}`)}
+              >
+                Bình luận
+              </Button>
+              <Button type="text" icon={<RetweetOutlined />}>Chia sẻ</Button>
+            </div>
           </Card>
         )}
       />
     );
   };
-
-  const tabItems = [
-    {
-      key: "all",
-      label: "Tất cả",
-      children: (
-        <Space direction="vertical" size={24} style={{ width: "100%" }}>
-          {results.users.length > 0 && (
-            <Card
-              title={<span style={{ display: "flex", alignItems: "center", gap: 8 }}><UserOutlined /> Mọi người</span>}
-              extra={<Link to="#" onClick={(e) => { e.preventDefault(); navigate(`/search?q=${query}&tab=users`); }}>Xem thêm</Link>}
-            >
-              {renderUsers(3)}
-            </Card>
-          )}
-
-          {results.groups.length > 0 && (
-            <Card
-              title={<span style={{ display: "flex", alignItems: "center", gap: 8 }}><TeamOutlined /> Nhóm</span>}
-              extra={<Link to="#" onClick={(e) => { e.preventDefault(); navigate(`/search?q=${query}&tab=groups`); }}>Xem thêm</Link>}
-            >
-              {renderGroups(3)}
-            </Card>
-          )}
-
-          {results.hashtags.length > 0 && (
-            <Card
-              title={<span style={{ display: "flex", alignItems: "center", gap: 8 }}><ThunderboltOutlined /> Hashtag thịnh hành</span>}
-            >
-              {renderHashtags(5)}
-            </Card>
-          )}
-
-          {results.posts.length > 0 && (
-            <Card
-              title={<span style={{ display: "flex", alignItems: "center", gap: 8 }}><FileTextOutlined /> Bài viết</span>}
-              extra={<Link to="#" onClick={(e) => { e.preventDefault(); navigate(`/search?q=${query}&tab=posts`); }}>Xem thêm</Link>}
-            >
-              {renderPosts(3)}
-            </Card>
-          )}
-
-          {!results.users.length && !results.posts.length && !results.groups.length && !results.hashtags.length && (
-            <Empty description={`Không tìm thấy kết quả nào cho "${query}"`} />
-          )}
-        </Space>
-      ),
-    },
-    {
-      key: "users",
-      label: "Mọi người",
-      children: renderUsers(),
-    },
-    {
-      key: "groups",
-      label: "Nhóm",
-      children: renderGroups(),
-    },
-    {
-      key: "hashtags",
-      label: "Hashtag",
-      children: renderHashtags(),
-    },
-    {
-      key: "posts",
-      label: "Bài viết",
-      children: renderPosts(),
-    },
-  ];
 
   const activeTab = searchParams.get("tab") || "all";
 
@@ -319,37 +295,170 @@ const SearchPage = () => {
     navigate(`/search?q=${encodeURIComponent(query)}&tab=${key}`, { replace: true });
   };
 
-  return (
-    <div className="social-page" style={{ maxWidth: "800px", margin: "0 auto", padding: "20px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
-        <Button
-          shape="circle"
-          icon={<ArrowLeftOutlined />}
-          onClick={() => navigate(-1)}
-        />
-        <div>
-          <Title level={3} style={{ margin: 0 }}>
-            Kết quả tìm kiếm cho
-          </Title>
-          <Text type="secondary" style={{ fontSize: "16px" }}>
-            "{query}"
-          </Text>
-        </div>
-      </div>
+  const filterMenuItems = [
+    { key: "all", label: "Tất cả", icon: <GlobalOutlined /> },
+    { key: "users", label: "Mọi người", icon: <UserOutlined /> },
+    { key: "groups", label: "Nhóm", icon: <TeamOutlined /> },
+    { key: "hashtags", label: "Hashtag", icon: <ThunderboltOutlined /> },
+    { key: "posts", label: "Bài viết", icon: <FileTextOutlined /> },
+  ];
 
-      {loading ? (
-        <div style={{ display: "flex", justifyContent: "center", padding: "40px" }}>
-          <Spin size="large" tip="Đang tải kết quả..." />
+  return (
+    <div className="social-page">
+      {/* 1. Cột trái: Bộ lọc (Ẩn trên thiết bị di động bằng CSS mặc định) */}
+      <aside className="social-left-rail">
+        <Card title="Bộ lọc tìm kiếm" className="social-panel">
+          <Menu
+            mode="inline"
+            selectedKeys={[activeTab]}
+            onClick={({ key }) => handleTabChange(key)}
+            items={filterMenuItems}
+            style={{ borderRight: 0 }}
+          />
+        </Card>
+      </aside>
+
+      {/* 2. Cột giữa: Danh sách kết quả chính */}
+      <main className="social-feed">
+        {/* Thanh tiêu đề tìm kiếm */}
+        <div className="feed-toolbar" style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+          <Button
+            shape="circle"
+            icon={<ArrowLeftOutlined />}
+            onClick={() => navigate(-1)}
+          />
+          <div>
+            <Title level={4} style={{ margin: 0, fontSize: "16px" }}>
+              Kết quả tìm kiếm cho:
+            </Title>
+            <Text type="secondary" style={{ fontSize: "14px", fontWeight: "bold" }}>
+              "{query}"
+            </Text>
+          </div>
         </div>
-      ) : (
-        <Tabs
-          activeKey={activeTab}
-          onChange={handleTabChange}
-          items={tabItems}
-          type="card"
-          className="search-tabs"
-        />
-      )}
+
+        {/* Bộ lọc ngang hiển thị ở Mobile (Khi cột trái bị ẩn) */}
+        <div className="block min-[1181px]:hidden" style={{ marginBottom: "16px" }}>
+          <Tabs
+            activeKey={activeTab}
+            onChange={handleTabChange}
+            items={filterMenuItems.map((item) => ({
+              key: item.key,
+              label: (
+                <span>
+                  {item.icon} {item.label}
+                </span>
+              ),
+            }))}
+            type="card"
+          />
+        </div>
+
+        {loading ? (
+          <div style={{ display: "flex", justifyContent: "center", padding: "40px" }}>
+            <Spin size="large" tip="Đang tải kết quả..." />
+          </div>
+        ) : (
+          <div className="search-results-content">
+            {activeTab === "all" && (
+              <Space direction="vertical" size={16} style={{ width: "100%" }}>
+                {results.users.length > 0 && (
+                  <Card
+                    className="social-panel"
+                    title={<span style={{ display: "flex", alignItems: "center", gap: 8 }}><UserOutlined /> Mọi người</span>}
+                    extra={<a href="#" onClick={(e) => { e.preventDefault(); handleTabChange("users"); }}>Xem tất cả</a>}
+                  >
+                    {renderUsers(3)}
+                  </Card>
+                )}
+
+                {results.groups.length > 0 && (
+                  <Card
+                    className="social-panel"
+                    title={<span style={{ display: "flex", alignItems: "center", gap: 8 }}><TeamOutlined /> Nhóm</span>}
+                    extra={<a href="#" onClick={(e) => { e.preventDefault(); handleTabChange("groups"); }}>Xem tất cả</a>}
+                  >
+                    {renderGroups(3)}
+                  </Card>
+                )}
+
+                {results.hashtags.length > 0 && (
+                  <Card
+                    className="social-panel"
+                    title={<span style={{ display: "flex", alignItems: "center", gap: 8 }}><ThunderboltOutlined /> Hashtag liên quan</span>}
+                    extra={<a href="#" onClick={(e) => { e.preventDefault(); handleTabChange("hashtags"); }}>Xem tất cả</a>}
+                  >
+                    {renderHashtags(5)}
+                  </Card>
+                )}
+
+                {results.posts.length > 0 && (
+                  <Card
+                    className="social-panel"
+                    title={<span style={{ display: "flex", alignItems: "center", gap: 8 }}><FileTextOutlined /> Bài viết</span>}
+                    extra={<a href="#" onClick={(e) => { e.preventDefault(); handleTabChange("posts"); }}>Xem tất cả</a>}
+                  >
+                    {renderPosts(3)}
+                  </Card>
+                )}
+
+                {!results.users.length && !results.posts.length && !results.groups.length && !results.hashtags.length && (
+                  <Card className="post-card">
+                    <Empty description={`Không tìm thấy kết quả nào cho "${query}"`} />
+                  </Card>
+                )}
+              </Space>
+            )}
+
+            {activeTab === "users" && (
+              <Card className="social-panel" title="Mọi người">
+                {renderUsers()}
+              </Card>
+            )}
+
+            {activeTab === "groups" && (
+              <Card className="social-panel" title="Nhóm">
+                {renderGroups()}
+              </Card>
+            )}
+
+            {activeTab === "hashtags" && (
+              <Card className="social-panel" title="Hashtag">
+                {renderHashtags()}
+              </Card>
+            )}
+
+            {activeTab === "posts" && (
+              <div>
+                {renderPosts()}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* 3. Cột phải: Chủ đề thịnh hành */}
+      <aside className="social-right-rail">
+        <Card className="social-panel" title="Chủ đề thịnh hành">
+          <Space wrap>
+            {trending.length ? (
+              trending.map((item) => (
+                <Tag
+                  key={item.topic}
+                  color="blue"
+                  className="trend-tag"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => navigate(`/search?q=${encodeURIComponent(item.topic)}`)}
+                >
+                  <ThunderboltOutlined /> #{item.topic} ({item.count})
+                </Tag>
+              ))
+            ) : (
+              <Text type="secondary">Chưa có chủ đề nổi bật</Text>
+            )}
+          </Space>
+        </Card>
+      </aside>
     </div>
   );
 };
