@@ -1,5 +1,20 @@
-import { Card, Empty, Button, Spin } from "antd";
+import { Card, Empty, Button, Spin, Image } from "antd";
 import { LoadingOutlined } from "@ant-design/icons";
+import { getMediaUrl } from "../../util/media";
+
+const normalizeMedia = (media = []) =>
+  media
+    .map((item) => {
+      if (!item) return null;
+      if (typeof item === "string") {
+        return {
+          url: item,
+          type: /\.(mp4|mov|avi|mkv|webm)$/i.test(item) ? "video" : "image",
+        };
+      }
+      return item;
+    })
+    .filter(Boolean);
 
 const PostsList = ({ posts, loading, hasNextPage, onLoadMore }) => {
   if (loading && posts.length === 0) {
@@ -25,7 +40,7 @@ const PostsList = ({ posts, loading, hasNextPage, onLoadMore }) => {
             </p>
           </div>
           <p>{post.content}</p>
-          {post.media && post.media.length > 0 && (
+          {normalizeMedia(post.media).length > 0 && (
             <div
               style={{
                 marginTop: "12px",
@@ -34,14 +49,24 @@ const PostsList = ({ posts, loading, hasNextPage, onLoadMore }) => {
                 flexWrap: "wrap",
               }}
             >
-              {post.media.map((url, idx) => (
-                <img
-                  key={idx}
-                  src={url}
-                  alt="media"
-                  style={{ maxWidth: "200px", height: "auto" }}
-                />
-              ))}
+              {normalizeMedia(post.media).map((item, idx) => {
+                const src = getMediaUrl(item.url);
+                return item.type === "video" ? (
+                  <video
+                    key={`${src}-${idx}`}
+                    src={src}
+                    controls
+                    style={{ maxWidth: "240px", height: "auto", borderRadius: "8px" }}
+                  />
+                ) : (
+                  <Image
+                    key={`${src}-${idx}`}
+                    src={src}
+                    alt={item.originalName || "media"}
+                    style={{ maxWidth: "200px", height: "auto", borderRadius: "8px" }}
+                  />
+                );
+              })}
             </div>
           )}
           <p style={{ marginTop: "12px", color: "#666", fontSize: "12px" }}>

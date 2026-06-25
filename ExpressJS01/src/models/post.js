@@ -9,7 +9,7 @@ const postSchema = new mongoose.Schema(
     },
     content: {
       type: String,
-      required: true,
+      default: "",
       trim: true,
     },
     visibility: {
@@ -35,11 +35,12 @@ const postSchema = new mongoose.Schema(
       ref: "post",
       default: null,
     },
-    media: [
-      {
-        type: String,
-      },
-    ],
+    group: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "group",
+      default: null,
+    },
+    media: [mongoose.Schema.Types.Mixed],
     stats: {
       reactions: { type: Number, default: 0 },
       comments: { type: Number, default: 0 },
@@ -50,6 +51,7 @@ const postSchema = new mongoose.Schema(
 );
 
 postSchema.index({ author: 1, createdAt: -1 });
+postSchema.index({ group: 1, createdAt: -1 });
 postSchema.index({ content: "text", hashtags: "text" });
 
 const Post = mongoose.model("post", postSchema);

@@ -15,7 +15,9 @@ const auth = require("../middleware/auth");
 const delay = require("../middleware/delay");
 const upload = require("../middleware/upload");
 const chatController = require("../controllers/chatController");
+const groupController = require("../controllers/groupController");
 const chatUpload = require("../middleware/chatUpload");
+const postMediaUpload = require("../middleware/postMediaUpload");
 
 const routerAPI = express.Router();
 
@@ -50,9 +52,10 @@ routerAPI.get("/profile/:userId", profileController.getProfile);
 routerAPI.get("/profile/:userId/posts", profileController.getUserPosts);
 routerAPI.get("/profile/:userId/friends", profileController.getUserFriends);
 routerAPI.get("/profile/:userId/followers", profileController.getUserFollowers);
+routerAPI.get("/profile/:userId/media/albums", profileController.getUserMediaAlbums);
 routerAPI.get("/profile/:userId/media", profileController.getUserMedia);
 
-routerAPI.post("/posts", socialController.createPost);
+routerAPI.post("/posts", postMediaUpload.array("media", 10), socialController.createPost);
 routerAPI.get("/feed", socialController.getFeed);
 routerAPI.get("/posts/:postId", socialController.getPostById);
 routerAPI.get("/trending", socialController.getTrendingTopics);
@@ -87,6 +90,34 @@ routerAPI.patch(
   "/notifications/read-all",
   socialController.markAllNotificationsRead,
 );
+
+// Group / Community routes
+routerAPI.get("/groups", groupController.listGroups);
+routerAPI.post("/groups", groupController.createGroup);
+routerAPI.get("/groups/:groupId", groupController.getGroupById);
+routerAPI.patch("/groups/:groupId", groupController.updateGroup);
+routerAPI.post("/groups/:groupId/join", groupController.joinGroup);
+routerAPI.delete("/groups/:groupId/leave", groupController.leaveGroup);
+routerAPI.get("/groups/:groupId/join-requests", groupController.listJoinRequests);
+routerAPI.patch(
+  "/groups/:groupId/join-requests/:requestId",
+  groupController.respondJoinRequest,
+);
+routerAPI.delete("/groups/:groupId/members/:memberId", groupController.removeMember);
+routerAPI.patch(
+  "/groups/:groupId/members/:memberId/role",
+  groupController.updateMemberRole,
+);
+routerAPI.get("/groups/:groupId/posts", groupController.getGroupPosts);
+routerAPI.post(
+  "/groups/:groupId/posts",
+  postMediaUpload.array("media", 10),
+  groupController.createGroupPost,
+);
+routerAPI.get("/groups/:groupId/events", groupController.listEvents);
+routerAPI.post("/groups/:groupId/events", groupController.createEvent);
+routerAPI.post("/groups/:groupId/events/:eventId/attend", groupController.attendEvent);
+routerAPI.delete("/groups/:groupId/events/:eventId/attend", groupController.leaveEvent);
 
 // Chat routes
 routerAPI.get("/conversations", chatController.getConversations);

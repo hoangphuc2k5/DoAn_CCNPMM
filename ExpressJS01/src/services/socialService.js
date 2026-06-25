@@ -8,6 +8,7 @@ const Post = require("../models/post");
 const Reaction = require("../models/reaction");
 const Report = require("../models/report");
 const User = require("../models/user");
+const { processPostMediaFiles } = require("./mediaService");
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
 
@@ -141,17 +142,19 @@ const getBlockedUserIds = async (userId) => {
   );
 };
 
-const createPost = async (userId, payload) => {
-  const content = payload.content?.trim();
+const createPost = async (userId, payload, files = []) => {
+  const content = payload.content?.trim() || (files.length ? " " : "");
   if (!content) return { EC: 1, EM: "Nội dung bài viết không được rỗng" };
 
-  const mentionedUsers = await findMentionedUsers(content);
+  const media = await processPostMediaFiles(files, userId);
+  const mentionedUsers = await findMentionedUsers(content.trim());
   const post = await Post.create({
     author: userId,
-    content,
+    content: content.trim(),
     visibility: payload.visibility || "public",
     mentions: mentionedUsers.map((user) => user._id),
-    hashtags: extractHashtags(content),
+    hashtags: extractHashtags(content.trim()),
+    media,
   });
 
   await notifyMentionedUsers({

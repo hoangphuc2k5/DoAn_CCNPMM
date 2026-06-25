@@ -1,5 +1,6 @@
 import { Empty, Button, Spin, Image } from "antd";
 import { LoadingOutlined } from "@ant-design/icons";
+import { getMediaUrl } from "../../util/media";
 
 const MediaGrid = ({ media, loading, hasNextPage, onLoadMore }) => {
   if (loading && media.length === 0) {
@@ -24,14 +25,31 @@ const MediaGrid = ({ media, loading, hasNextPage, onLoadMore }) => {
             gap: "12px",
           }}
         >
-          {media.map((item, idx) => (
-            <Image
-              key={idx}
-              src={item.url}
-              alt={`media-${idx}`}
-              style={{ height: "200px", objectFit: "cover" }}
-            />
-          ))}
+          {media.map((item, idx) => {
+            const type = item.type || (/\.(mp4|mov|avi|mkv|webm)$/i.test(item.url) ? "video" : "image");
+            const src = getMediaUrl(item.url);
+
+            return type === "video" ? (
+              <video
+                key={`${src}-${idx}`}
+                src={src}
+                controls
+                style={{
+                  width: "100%",
+                  height: "200px",
+                  objectFit: "cover",
+                  borderRadius: "8px",
+                }}
+              />
+            ) : (
+              <Image
+                key={`${src}-${idx}`}
+                src={src}
+                alt={`media-${idx}`}
+                style={{ height: "200px", objectFit: "cover" }}
+              />
+            );
+          })}
         </div>
       </Image.PreviewGroup>
       {hasNextPage && (

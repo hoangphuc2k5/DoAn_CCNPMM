@@ -7,6 +7,33 @@ const Post = require("../models/post");
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
 
+const normalizeMediaItem = (item, postId, createdAt) => {
+  if (!item) return null;
+
+  if (typeof item === "string") {
+    return {
+      url: item,
+      type: /\.(mp4|mov|avi|mkv|webm)$/i.test(item) ? "video" : "image",
+      postId,
+      createdAt,
+    };
+  }
+
+  return {
+    url: item.url,
+    type: item.type || (item.mimeType?.startsWith("video/") ? "video" : "image"),
+    postId,
+    createdAt,
+    originalName: item.originalName,
+    mimeType: item.mimeType,
+    size: item.size,
+    originalSize: item.originalSize,
+    width: item.width,
+    height: item.height,
+    storageProvider: item.storageProvider,
+  };
+};
+
 const hasBlockBetween = async (userA, userB) => {
   if (!userA || !userB || String(userA) === String(userB)) return false;
   const block = await Block.findOne({
@@ -338,7 +365,9 @@ const getUserMediaService = async (
         : null;
 
     const media = paginatedPosts.flatMap((post) =>
-      post.media.map((url) => ({ url, postId: post._id })),
+      post.media
+        .map((item) => normalizeMediaItem(item, post._id, post.createdAt))
+        .filter(Boolean),
     );
 
     return {
@@ -355,6 +384,71 @@ const getUserMediaService = async (
   }
 };
 
+const getUserMediaAlbumsService = async (userId, currentUserId) => {
+  try {
+    if (currentUserId && String(userId) !== String(currentUserId)) {
+      const isBlocked = await hasBlockBetween(userId, currentUserId);
+      if (isBlocked) {
+        return { EC: 1, EM: "Khong the xem album media nay" };
+      }
+    }
+
+    let query = { author: userId, media: { $exists: true, $ne: [] } };
+
+    if (!currentUserId || String(userId) !== String(currentUserId)) {
+      const isFriend = await Friendship.findOne({
+        $or: [
+          { requester: currentUserId, recipient: userId, status: "accepted" },
+          { requester: userId, recipient: currentUserId, status: "accepted" },
+        ],
+      });
+
+      query.visibility = isFriend ? { $in: ["public", "friends"] } : "public";
+    }
+
+    const posts = await Post.find(query)
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .select("media createdAt");
+
+    const albumsByKey = new Map();
+
+    posts.forEach((post) => {
+      const date = new Date(post.createdAt);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const title = `Thang ${date.getMonth() + 1}/${date.getFullYear()}`;
+      const items = post.media
+        .map((item) => normalizeMediaItem(item, post._id, post.createdAt))
+        .filter(Boolean);
+
+      if (!albumsByKey.has(key)) {
+        albumsByKey.set(key, {
+          key,
+          title,
+          count: 0,
+          coverUrl: items[0]?.url || "",
+          items: [],
+        });
+      }
+
+      const album = albumsByKey.get(key);
+      album.items.push(...items);
+      album.count = album.items.length;
+      if (!album.coverUrl && items[0]?.url) {
+        album.coverUrl = items[0].url;
+      }
+    });
+
+    return {
+      EC: 0,
+      data: [...albumsByKey.values()],
+    };
+  } catch (error) {
+    console.log(error);
+    return { EC: 2, EM: "Co loi xay ra khi lay album media" };
+  }
+};
+
 module.exports = {
   getFullProfileService,
   updateProfileService,
@@ -364,4 +458,5 @@ module.exports = {
   getUserFriendsService,
   getUserFollowersService,
   getUserMediaService,
+  getUserMediaAlbumsService,
 };

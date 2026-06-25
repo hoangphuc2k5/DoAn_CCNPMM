@@ -72,6 +72,47 @@ const recallMessageApi = (messageId) => axios.delete(`/v1/api/messages/${message
 
 const markSeenApi = (conversationId) => axios.post(`/v1/api/conversations/${conversationId}/seen`);
 
+const getGroupsApi = (params) => axios.get("/v1/api/groups", { params });
+
+const createGroupApi = (payload) => axios.post("/v1/api/groups", payload);
+
+const getGroupApi = (groupId) => axios.get(`/v1/api/groups/${groupId}`);
+
+const updateGroupApi = (groupId, payload) => axios.patch(`/v1/api/groups/${groupId}`, payload);
+
+const joinGroupApi = (groupId) => axios.post(`/v1/api/groups/${groupId}/join`);
+
+const leaveGroupApi = (groupId) => axios.delete(`/v1/api/groups/${groupId}/leave`);
+
+const getGroupJoinRequestsApi = (groupId) =>
+  axios.get(`/v1/api/groups/${groupId}/join-requests`);
+
+const respondGroupJoinRequestApi = (groupId, requestId, action) =>
+  axios.patch(`/v1/api/groups/${groupId}/join-requests/${requestId}`, { action });
+
+const removeGroupMemberApi = (groupId, memberId) =>
+  axios.delete(`/v1/api/groups/${groupId}/members/${memberId}`);
+
+const updateGroupMemberRoleApi = (groupId, memberId, role) =>
+  axios.patch(`/v1/api/groups/${groupId}/members/${memberId}/role`, { role });
+
+const getGroupPostsApi = (groupId, params) =>
+  axios.get(`/v1/api/groups/${groupId}/posts`, { params });
+
+const createGroupPostApi = (groupId, payload) =>
+  axios.post(`/v1/api/groups/${groupId}/posts`, payload);
+
+const getGroupEventsApi = (groupId) => axios.get(`/v1/api/groups/${groupId}/events`);
+
+const createGroupEventApi = (groupId, payload) =>
+  axios.post(`/v1/api/groups/${groupId}/events`, payload);
+
+const attendGroupEventApi = (groupId, eventId) =>
+  axios.post(`/v1/api/groups/${groupId}/events/${eventId}/attend`);
+
+const leaveGroupEventApi = (groupId, eventId) =>
+  axios.delete(`/v1/api/groups/${groupId}/events/${eventId}/attend`);
+
 export {
   blockUserApi,
   commentPostApi,
@@ -82,21 +123,37 @@ export {
   friendRequestApi,
   getAccountApi,
   getFeedApi,
+  getGroupApi,
+  getGroupEventsApi,
+  getGroupPostsApi,
+  getGroupsApi,
   getNotificationsApi,
   getPostByIdApi,
   getRelationshipsApi,
   getTrendingApi,
   getUserApi,
   loginApi,
+  attendGroupEventApi,
+  createGroupApi,
+  createGroupEventApi,
+  createGroupPostApi,
+  getGroupJoinRequestsApi,
+  joinGroupApi,
+  leaveGroupEventApi,
+  leaveGroupApi,
   markAllNotificationsReadApi,
   markNotificationReadApi,
   reactPostApi,
   replyCommentApi,
   reportPostApi,
   reportUserApi,
+  removeGroupMemberApi,
+  respondGroupJoinRequestApi,
   respondFriendRequestApi,
   searchApi,
   sharePostApi,
+  updateGroupApi,
+  updateGroupMemberRoleApi,
   unblockUserApi,
   unfollowUserApi,
   getConversationsApi,

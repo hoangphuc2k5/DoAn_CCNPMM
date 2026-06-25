@@ -8,6 +8,7 @@ import {
   Drawer,
   Dropdown,
   Empty,
+  Image,
   Input,
   List,
   Modal,
@@ -16,17 +17,20 @@ import {
   Space,
   Tag,
   Typography,
+  Upload,
   message,
 } from "antd";
 import {
   BellOutlined,
   CommentOutlined,
+  DeleteOutlined,
   EllipsisOutlined,
   FlagOutlined,
   GlobalOutlined,
   HomeOutlined,
   LikeFilled,
   LikeOutlined,
+  PictureOutlined,
   RetweetOutlined,
   StopOutlined,
   TeamOutlined,
@@ -78,6 +82,20 @@ const notificationText = {
   report_received: "có báo cáo mới",
 };
 
+const normalizePostMedia = (media = []) =>
+  media
+    .map((item) => {
+      if (!item) return null;
+      if (typeof item === "string") {
+        return {
+          url: item,
+          type: /\.(mp4|mov|avi|mkv|webm)$/i.test(item) ? "video" : "image",
+        };
+      }
+      return item;
+    })
+    .filter(Boolean);
+
 const HomePage = () => {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useSelector((state) => state.auth);
@@ -88,6 +106,7 @@ const HomePage = () => {
   const [hasMore, setHasMore] = useState(false);
   const [loadingFeed, setLoadingFeed] = useState(false);
   const [postContent, setPostContent] = useState("");
+  const [postMediaFiles, setPostMediaFiles] = useState([]);
   const [visibility, setVisibility] = useState("public");
   const [commentDrafts, setCommentDrafts] = useState({});
   const [replyDrafts, setReplyDrafts] = useState({});
@@ -158,15 +177,31 @@ const HomePage = () => {
   };
 
   const handleCreatePost = async () => {
-    const res = await createPostApi({ content: postContent, visibility });
+    const formData = new FormData();
+    formData.append("content", postContent);
+    formData.append("visibility", visibility);
+    postMediaFiles.forEach((file) => {
+      formData.append("media", file.originFileObj || file);
+    });
+
+    const res = await createPostApi(formData);
     if (res?.EC === 0) {
       setPostContent("");
+      setPostMediaFiles([]);
       message.success("Đã đăng bài");
       await loadFeed({ nextPage: 1 });
       await loadTrending();
     } else {
       message.error(res?.EM || "Không thể đăng bài");
     }
+  };
+
+  const handleMediaChange = ({ fileList }) => {
+    setPostMediaFiles(fileList.slice(0, 10));
+  };
+
+  const removeMediaFile = (uid) => {
+    setPostMediaFiles((prev) => prev.filter((file) => file.uid !== uid));
   };
 
   const handleReact = async (postId, type) => {
@@ -448,6 +483,35 @@ const HomePage = () => {
             onChange={(event) => setPostContent(event.target.value)}
             placeholder="Viết bài đăng... dùng @email để mention và #topic để tạo trending"
           />
+          <div className="composer-media">
+            <Upload
+              accept="image/*,video/*"
+              beforeUpload={() => false}
+              fileList={postMediaFiles}
+              multiple
+              onChange={handleMediaChange}
+              showUploadList={false}
+            >
+              <Button icon={<PictureOutlined />}>Them anh/video</Button>
+            </Upload>
+            {postMediaFiles.length ? (
+              <div className="composer-media-list">
+                {postMediaFiles.map((file) => (
+                  <Tag
+                    key={file.uid}
+                    closable
+                    closeIcon={<DeleteOutlined />}
+                    onClose={(event) => {
+                      event.preventDefault();
+                      removeMediaFile(file.uid);
+                    }}
+                  >
+                    {file.name}
+                  </Tag>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <Divider className="compact-divider" />
           <div className="composer-actions">
             <Select
@@ -463,7 +527,7 @@ const HomePage = () => {
             <Button
               type="primary"
               onClick={handleCreatePost}
-              disabled={!postContent.trim()}
+              disabled={!postContent.trim() && postMediaFiles.length === 0}
             >
               Đăng bài
             </Button>
@@ -541,6 +605,29 @@ const HomePage = () => {
                       </Tag>
                     ))}
                   </Space>
+                ) : null}
+
+                {normalizePostMedia(post.media).length ? (
+                  <div className="post-media-grid">
+                    {normalizePostMedia(post.media).map((item, idx) => {
+                      const src = getMediaUrl(item.url);
+                      return item.type === "video" ? (
+                        <video
+                          key={`${src}-${idx}`}
+                          className="post-media-item"
+                          controls
+                          src={src}
+                        />
+                      ) : (
+                        <Image
+                          key={`${src}-${idx}`}
+                          className="post-media-item"
+                          src={src}
+                          alt={item.originalName || "post media"}
+                        />
+                      );
+                    })}
+                  </div>
                 ) : null}
 
                 {post.sharedPost ? (

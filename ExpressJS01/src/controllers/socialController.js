@@ -3,7 +3,11 @@ const socialService = require("../services/socialService");
 const currentUserId = (req) => req.user._id;
 
 const createPost = async (req, res) => {
-  const data = await socialService.createPost(currentUserId(req), req.body);
+  const data = await socialService.createPost(
+    currentUserId(req),
+    req.body,
+    req.files || [],
+  );
   return res.status(200).json(data);
 };
 
