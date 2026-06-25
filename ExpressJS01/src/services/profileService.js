@@ -33,8 +33,9 @@ const getFullProfileService = async (userId, currentUserId) => {
       }
     }
 
-    // Count followers, friends, posts
-    const followerCount = await Follow.countDocuments({ followee: userId });
+    // Count followers, friends, posts, following
+    const followerCount = await Follow.countDocuments({ following: userId });
+    const followingCount = await Follow.countDocuments({ follower: userId });
     const friendCount = await Friendship.countDocuments({
       $or: [
         { requester: userId, status: "accepted" },
@@ -47,10 +48,11 @@ const getFullProfileService = async (userId, currentUserId) => {
     let isFollowing = false;
     let isFriend = false;
     let hasPendingRequest = false;
+    let hasIncomingRequest = false;
 
     if (currentUserId && String(userId) !== String(currentUserId)) {
       isFollowing = Boolean(
-        await Follow.findOne({ follower: currentUserId, followee: userId }),
+        await Follow.findOne({ follower: currentUserId, following: userId }),
       );
 
       const friendshipDoc = await Friendship.findOne({
@@ -65,6 +67,9 @@ const getFullProfileService = async (userId, currentUserId) => {
         hasPendingRequest =
           friendshipDoc.status === "pending" &&
           String(friendshipDoc.requester) === String(currentUserId);
+        hasIncomingRequest =
+          friendshipDoc.status === "pending" &&
+          String(friendshipDoc.recipient) === String(currentUserId);
       }
     }
 
@@ -82,11 +87,13 @@ const getFullProfileService = async (userId, currentUserId) => {
         phone: user.phone,
         address: user.address,
         followerCount,
+        followingCount,
         friendCount,
         postsCount,
         isFollowing,
         isFriend,
         hasPendingRequest,
+        hasIncomingRequest,
       },
     };
   } catch (error) {
@@ -271,13 +278,13 @@ const getUserFriendsService = async (userId, limit = 10, skip = 0) => {
 
 const getUserFollowersService = async (userId, limit = 10, skip = 0) => {
   try {
-    const followers = await Follow.find({ followee: userId })
+    const followers = await Follow.find({ following: userId })
       .populate("follower", "name avatar email")
       .limit(limit)
       .skip(skip);
 
     const followerUsers = followers.map((f) => f.follower);
-    const total = await Follow.countDocuments({ followee: userId });
+    const total = await Follow.countDocuments({ following: userId });
 
     return {
       EC: 0,
@@ -354,6 +361,25 @@ const getUserMediaService = async (
     return { EC: 2, EM: "Có lỗi xảy ra khi lấy media" };
   }
 };
+const getUserFollowingService = async (userId, limit = 10, skip = 0) => {
+  try {
+    const followings = await Follow.find({ follower: userId })
+      .populate("following", "name avatar email")
+      .limit(limit)
+      .skip(skip);
+
+    const followingUsers = followings.map((f) => f.following);
+    const total = await Follow.countDocuments({ follower: userId });
+
+    return {
+      EC: 0,
+      data: { following: followingUsers, total, limit, skip },
+    };
+  } catch (error) {
+    console.log(error);
+    return { EC: 2, EM: "Có lỗi xảy ra khi lấy danh sách đang theo dõi" };
+  }
+};
 
 module.exports = {
   getFullProfileService,
@@ -363,5 +389,6 @@ module.exports = {
   getUserPostsService,
   getUserFriendsService,
   getUserFollowersService,
+  getUserFollowingService,
   getUserMediaService,
 };

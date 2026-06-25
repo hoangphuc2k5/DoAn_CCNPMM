@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { Spin } from "antd";
 import { useDispatch, useSelector } from "react-redux";
-import Header from "./components/layout/header";
+import Sidebar from "./components/layout/sidebar";
 import { fetchAccountThunk } from "./Redux/authSlice";
 
 function App() {
@@ -22,10 +22,12 @@ function App() {
   }
 
   return (
-    <>
-      <Header />
-      <Outlet />
-    </>
+    <div className="app-layout">
+      <Sidebar />
+      <main className="app-main-content">
+        <Outlet />
+      </main>
+    </div>
   );
 }
 

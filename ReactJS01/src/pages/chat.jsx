@@ -1,9 +1,7 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import {
-  Layout,
-  List,
   Avatar,
   Input,
   Button,
@@ -15,21 +13,25 @@ import {
   Spin,
   Checkbox,
   message as antdMessage,
+  List,
 } from "antd";
 import {
   SendOutlined,
   PaperClipOutlined,
   SmileOutlined,
-  UsergroupAddOutlined,
-  DeleteOutlined,
   PictureOutlined,
   FileOutlined,
-  CheckOutlined,
-  CheckCircleOutlined,
   InfoCircleOutlined,
-  MessageOutlined,
   TeamOutlined,
   CloseOutlined,
+  PhoneOutlined,
+  VideoCameraOutlined,
+  UserOutlined,
+  BellOutlined,
+  SearchOutlined,
+  StopOutlined,
+  FlagOutlined,
+  EditOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -44,14 +46,14 @@ import {
   recallMessageApi,
   markSeenApi,
   getRelationshipsApi,
+  blockUserApi,
+  reportUserApi,
 } from "../util/api";
 
 dayjs.extend(relativeTime);
 dayjs.locale("vi");
 
-const { Sidebar, Content } = Layout;
-
-// Static animated Noto Emojis for stickers
+// Emojis for Sticker Panel
 const STICKERS = [
   { id: "dog", url: "https://fonts.gstatic.com/s/e/notoemoji/latest/1f436/512.webp", name: "Chó con" },
   { id: "cat", url: "https://fonts.gstatic.com/s/e/notoemoji/latest/1f431/512.webp", name: "Mèo con" },
@@ -67,37 +69,78 @@ const STICKERS = [
 
 const EMOJIS = ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇", "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥸", "🤩", "🥳", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠", "😡", "🤬", "🤯", "😳", "🥵", "🥶", "😱", "😨", "😰", "😥", "😓", "🤗", "🤔", "🤭", "🤫", "🤥", "😶", "😐", "😑", "😬", "🙄", "😯", "😦", "😧", "😮", "😲", "🥱", "😴", "🤤", "😪", "😵", "🤐", "🥴", "🤢", "🤮", "🤧", "😷", "🤒", "🤕", "🤑", "🤠", "😈", "👿", "👹", "👺", "🤡", "💩", "👻", "💀", "☠️", "👽", "👾", "🤖", "🎃", "😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾"];
 
+// Short Time Formatter (e.g. 2p, 15p, 1h, 1d)
+const formatTimeAgo = (dateStr) => {
+  if (!dateStr) return "";
+  const now = dayjs();
+  const date = dayjs(dateStr);
+  const diffMin = now.diff(date, "minute");
+  const diffHour = now.diff(date, "hour");
+  const diffDay = now.diff(date, "day");
+
+  if (diffMin < 1) return "Vừa xong";
+  if (diffMin < 60) return `${diffMin}p`;
+  if (diffHour < 24) return `${diffHour}h`;
+  return `${diffDay}d`;
+};
+
 const ChatPage = () => {
   const currentUser = useSelector((state) => state.auth.user);
   const { socket, onlineUsers } = useSocket();
   const navigate = useNavigate();
 
+  const getConvDetails = (conv) => {
+    if (conv.isGroup) {
+      return {
+        name: conv.name,
+        avatar: conv.avatar || "",
+        isOnline: false,
+      };
+    }
+
+    const otherUser = conv.participants.find((p) => p._id !== currentUser?._id);
+    const isOnline = otherUser ? onlineUsers.includes(otherUser._id.toString()) : false;
+
+    return {
+      name: otherUser ? otherUser.name : "Tài khoản Tegram",
+      avatar: otherUser ? otherUser.avatar : "",
+      isOnline,
+      userId: otherUser?._id,
+    };
+  };
+
+  // Conversations & message states
   const [conversations, setConversations] = useState([]);
   const [selectedConv, setSelectedConv] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loadingConv, setLoadingConv] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
+
+  // Sidebar Search and Tabs
+  const [activeTab, setActiveTab] = useState("personal"); // "personal" or "group"
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Chat input and attachments
   const [messageInput, setMessageInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [typingUsers, setTypingUsers] = useState([]);
   const [friends, setFriends] = useState([]);
-  const [showRightPanel, setShowRightPanel] = useState(false);
+  const [showRightPanel, setShowRightPanel] = useState(true);
 
-  // Create Group Modal
+  // Group creation modal state
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [selectedFriends, setSelectedFriends] = useState([]);
 
-  // Create 1-1 Chat Modal
+  // 1-1 Friend Selection Modal state
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
 
-  // File Upload state
+  // Staged Files
   const [fileList, setFileList] = useState([]);
 
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
-  // Scroll to bottom
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -106,13 +149,13 @@ const ChatPage = () => {
     scrollToBottom();
   }, [messages, typingUsers]);
 
-  // Initial fetch conversations and friends list
+  // Initial Fetches
   useEffect(() => {
     fetchConversations();
     fetchFriends();
   }, []);
 
-  // Socket listener setup
+  // Socket Listener Config
   useEffect(() => {
     if (!socket) return;
 
@@ -124,17 +167,13 @@ const ChatPage = () => {
 
       if (isCurrent) {
         setMessages((prev) => {
-          // Tránh bị duplicate tin nhắn
           if (prev.some((m) => m._id === message._id)) return prev;
           return [...prev, message];
         });
-        // Đánh dấu đã xem trên server
         markSeenApi(selectedConv._id);
-        // Phát socket đã xem tin nhắn
         socket.emit("message_seen", selectedConv._id);
       }
 
-      // Cập nhật cuộc hội thoại ở sidebar
       setConversations((prev) => {
         const convId = message.conversation._id || message.conversation;
         const index = prev.findIndex((c) => c._id === convId);
@@ -168,10 +207,7 @@ const ChatPage = () => {
       setConversations((prev) =>
         prev.map((c) => {
           if (c.lastMessage && c.lastMessage._id === recalledMsg._id) {
-            return {
-              ...c,
-              lastMessage: recalledMsg,
-            };
+            return { ...c, lastMessage: recalledMsg };
           }
           return c;
         })
@@ -250,13 +286,11 @@ const ChatPage = () => {
     };
   }, [socket, selectedConv, currentUser]);
 
-  // Join/leave rooms when active conversation changes
+  // Join/leave rooms
   useEffect(() => {
     if (!socket || !selectedConv) return;
 
     socket.emit("join_room", selectedConv._id);
-
-    // Đánh dấu đã xem
     markSeenApi(selectedConv._id);
     socket.emit("message_seen", selectedConv._id);
 
@@ -265,13 +299,14 @@ const ChatPage = () => {
     };
   }, [socket, selectedConv?._id]);
 
+  // APIs fetchers
   const fetchConversations = async () => {
     setLoadingConv(true);
     const res = await getConversationsApi();
     if (res && res.EC === 0) {
       setConversations(res.data || []);
     } else {
-      antdMessage.error(res?.EM || "Không thể lấy danh sách cuộc trò chuyện");
+      antdMessage.error(res?.EM || "Không thể tải danh sách cuộc trò chuyện");
     }
     setLoadingConv(false);
   };
@@ -302,10 +337,27 @@ const ChatPage = () => {
     fetchMessages(conv._id);
   };
 
-  // Chat Input Typing events
+  // Online friends list
+  const onlineFriends = useMemo(() => {
+    return friends.filter((f) => onlineUsers.includes(f._id.toString()));
+  }, [friends, onlineUsers]);
+
+  // Filtering conversations by Active Tab (Personal/Group) and Search Query
+  const filteredConversations = useMemo(() => {
+    return conversations
+      .filter((c) => {
+        if (activeTab === "personal") return !c.isGroup;
+        return c.isGroup;
+      })
+      .filter((c) => {
+        const details = getConvDetails(c);
+        return details.name.toLowerCase().includes(searchQuery.toLowerCase());
+      });
+  }, [conversations, activeTab, searchQuery]);
+
+  // Input actions
   const handleInputChange = (e) => {
     setMessageInput(e.target.value);
-
     if (!socket || !selectedConv) return;
 
     if (!isTyping) {
@@ -314,23 +366,16 @@ const ChatPage = () => {
     }
 
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-
     typingTimeoutRef.current = setTimeout(() => {
       setIsTyping(false);
       socket.emit("stop_typing", { conversationId: selectedConv._id });
     }, 2000);
   };
 
-  // Send message handler
   const handleSendMessage = async (payloadOverride = {}) => {
     if (!selectedConv) return;
+    if (!messageInput.trim() && fileList.length === 0 && !payloadOverride.sticker) return;
 
-    // Nếu không có nội dung và không có file đính kèm/sticker
-    if (!messageInput.trim() && fileList.length === 0 && !payloadOverride.sticker) {
-      return;
-    }
-
-    // Stop typing
     if (isTyping && socket) {
       setIsTyping(false);
       socket.emit("stop_typing", { conversationId: selectedConv._id });
@@ -338,22 +383,16 @@ const ChatPage = () => {
 
     try {
       let res;
-
       if (fileList.length > 0) {
-        // Gửi file đính kèm bằng FormData
         const formData = new FormData();
         formData.append("content", messageInput);
-        // Bỏ type: "file" để backend tự động nhận diện đúng loại tệp tin
         fileList.forEach((file) => {
           formData.append("attachments", file.originFileObj || file);
         });
-
-        // Tạm thời hiển thị loading cho user biết
         const hideLoading = antdMessage.loading("Đang gửi tệp tin...", 0);
         res = await sendMessageApi(selectedConv._id, formData);
         hideLoading();
       } else {
-        // Gửi tin nhắn text hoặc sticker thông thường bằng JSON
         const payload = {
           content: payloadOverride.sticker ? "" : messageInput,
           type: payloadOverride.sticker ? "sticker" : "text",
@@ -374,17 +413,14 @@ const ChatPage = () => {
     }
   };
 
-  // Send Sticker handler
   const handleSendSticker = (stickerUrl) => {
     handleSendMessage({ sticker: stickerUrl });
   };
 
-  // Append emoji to text input
   const handleEmojiClick = (emoji) => {
     setMessageInput((prev) => prev + emoji);
   };
 
-  // Recall message handler
   const handleRecallMessage = async (messageId) => {
     const res = await recallMessageApi(messageId);
     if (res && res.EC === 0) {
@@ -394,9 +430,17 @@ const ChatPage = () => {
     }
   };
 
-  // Create new conversation
   const handleStartNewChat = async (friendId) => {
     setIsNewChatModalOpen(false);
+    // Open if already exists
+    const existing = conversations.find(
+      (c) => !c.isGroup && c.participants.some((p) => p._id === friendId)
+    );
+    if (existing) {
+      selectConversation(existing);
+      return;
+    }
+
     const res = await createConversationApi({
       isGroup: false,
       participants: [friendId],
@@ -404,18 +448,13 @@ const ChatPage = () => {
 
     if (res && res.EC === 0) {
       const newConv = res.data;
-      // Add to list if not exist
-      setConversations((prev) => {
-        if (prev.some((c) => c._id === newConv._id)) return prev;
-        return [newConv, ...prev];
-      });
+      setConversations((prev) => [newConv, ...prev]);
       selectConversation(newConv);
     } else {
       antdMessage.error(res?.EM || "Không thể tạo cuộc trò chuyện");
     }
   };
 
-  // Create new Group conversation
   const handleCreateGroup = async () => {
     if (!groupName.trim()) {
       antdMessage.warning("Vui lòng nhập tên nhóm!");
@@ -445,30 +484,70 @@ const ChatPage = () => {
     }
   };
 
-  // Helper: Get conversation displayName and avatar
-  const getConvDetails = (conv) => {
-    if (conv.isGroup) {
-      return {
-        name: conv.name,
-        avatar: conv.avatar || "",
-        isOnline: false,
-      };
-    }
-
-    const otherUser = conv.participants.find((p) => p._id !== currentUser?._id);
-    const isOnline = otherUser ? onlineUsers.includes(otherUser._id.toString()) : false;
-
-    return {
-      name: otherUser ? otherUser.name : "Tài khoản Tegram",
-      avatar: otherUser ? otherUser.avatar : "",
-      isOnline,
-    };
+  // Block & Report functionality inside Right Panel
+  const handleBlockUser = (userId) => {
+    Modal.confirm({
+      title: "Chặn người dùng này?",
+      content: "Sau khi chặn, hai bên sẽ không còn có thể nhắn tin hoặc tương tác với nhau.",
+      okText: "Chặn",
+      okButtonProps: { danger: true },
+      cancelText: "Hủy",
+      onOk: async () => {
+        try {
+          const res = await blockUserApi(userId);
+          if (res?.EC === 0) {
+            antdMessage.success("Đã chặn người dùng");
+            fetchConversations();
+            setSelectedConv(null);
+          } else {
+            antdMessage.error(res?.EM || "Lỗi chặn người dùng");
+          }
+        } catch (err) {
+          antdMessage.error("Không thể hoàn thành hành động");
+        }
+      },
+    });
   };
 
-  // Helpers to render message content
+  const handleReportUser = (userId) => {
+    let reason = "";
+    Modal.confirm({
+      title: "Báo cáo người dùng",
+      content: (
+        <Input.TextArea
+          rows={3}
+          placeholder="Nhập lý do báo cáo..."
+          onChange={(e) => { reason = e.target.value; }}
+        />
+      ),
+      okText: "Gửi báo cáo",
+      cancelText: "Hủy",
+      onOk: async () => {
+        if (!reason.trim()) {
+          antdMessage.warning("Vui lòng nhập lý do!");
+          return;
+        }
+        try {
+          const res = await reportUserApi(userId, reason);
+          if (res?.EC === 0) {
+            antdMessage.success(res.EM || "Đã gửi báo cáo thành công!");
+          } else {
+            antdMessage.error(res?.EM || "Lỗi gửi báo cáo");
+          }
+        } catch (err) {
+          antdMessage.error("Không thể hoàn thành hành động");
+        }
+      },
+    });
+  };
+
+  const showNotSupportedMessage = (featureName) => {
+    antdMessage.info(`Tính năng "${featureName}" hiện chưa được hỗ trợ`);
+  };
+
   const renderMessageContent = (msg) => {
     if (msg.isRecalled) {
-      return <span style={{ fontStyle: "italic", color: "#8c8c8c" }}>{msg.content}</span>;
+      return <span style={{ fontStyle: "italic", opacity: 0.6 }}>Tin nhắn đã bị thu hồi</span>;
     }
 
     switch (msg.type) {
@@ -476,22 +555,22 @@ const ChatPage = () => {
         return <img src={msg.sticker} alt="sticker" style={{ maxWidth: 120, height: "auto" }} />;
       case "image":
         return (
-          <div className="flex flex-col gap-2">
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {msg.content && <div>{msg.content}</div>}
-            <div className="grid grid-cols-1 gap-1 max-w-sm rounded-lg overflow-hidden border border-gray-100">
+            <div style={{ display: "grid", gap: 4, gridTemplateColumns: "1fr", maxWidth: 280, borderRadius: 8, overflow: "hidden" }}>
               {msg.attachments.map((att) => (
                 <img
                   key={att._id}
                   src={getMediaUrl(att.url)}
                   alt={att.filename}
-                  className="w-full object-cover max-h-60 cursor-pointer hover:opacity-90 transition-opacity"
+                  className="chat-attachment-image"
                   onClick={() => {
                     Modal.info({
                       title: att.filename,
                       width: 800,
                       content: (
-                        <div className="flex justify-center p-2 bg-black rounded">
-                          <img src={getMediaUrl(att.url)} alt={att.filename} className="max-w-full max-h-[70vh] object-contain" />
+                        <div style={{ display: "flex", justifyContent: "center", padding: 8, backgroundColor: "#000" }}>
+                          <img src={getMediaUrl(att.url)} alt={att.filename} style={{ maxWidth: "100%", maxHeight: "70vh", objectFit: "contain" }} />
                         </div>
                       ),
                       icon: null,
@@ -505,21 +584,21 @@ const ChatPage = () => {
         );
       case "video":
         return (
-          <div className="flex flex-col gap-2">
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {msg.content && <div>{msg.content}</div>}
             {msg.attachments.map((att) => (
               <video
                 key={att._id}
                 src={getMediaUrl(att.url)}
                 controls
-                className="max-w-xs rounded-lg border border-gray-200"
+                style={{ maxWidth: 280, borderRadius: 8, border: "1px solid #edf0f4" }}
               />
             ))}
           </div>
         );
       case "file":
         return (
-          <div className="flex flex-col gap-2">
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {msg.content && <div>{msg.content}</div>}
             {msg.attachments.map((att) => {
               const isImg = att.mimetype.startsWith("image/");
@@ -531,7 +610,7 @@ const ChatPage = () => {
                     key={att._id}
                     src={getMediaUrl(att.url)}
                     alt={att.filename}
-                    className="max-w-xs max-h-40 object-cover rounded border"
+                    style={{ maxWidth: 280, borderRadius: 8, border: "1px solid #edf0f4" }}
                   />
                 );
               }
@@ -541,7 +620,7 @@ const ChatPage = () => {
                     key={att._id}
                     src={getMediaUrl(att.url)}
                     controls
-                    className="max-w-xs rounded border"
+                    style={{ maxWidth: 280, borderRadius: 8, border: "1px solid #edf0f4" }}
                   />
                 );
               }
@@ -552,12 +631,13 @@ const ChatPage = () => {
                   href={getMediaUrl(att.url)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-zinc-800 rounded-lg hover:bg-gray-100 border transition-all text-inherit font-medium max-w-xs"
+                  className="right-sidebar-file-item"
+                  style={{ maxWidth: 280, display: "flex", margin: "4px 0" }}
                 >
                   <FileOutlined className="text-xl text-blue-500" />
-                  <div className="flex-1 overflow-hidden">
-                    <div className="text-xs truncate">{att.filename}</div>
-                    <div className="text-[10px] text-gray-400">Tải xuống tệp tin</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "11px", fontWeight: "bold" }} className="truncate">{att.filename}</div>
+                    <div style={{ fontSize: "9px", color: "gray" }}>Tải xuống tệp tin</div>
                   </div>
                 </a>
               );
@@ -570,15 +650,14 @@ const ChatPage = () => {
     }
   };
 
-  // Sticker Panel Component
   const stickerPanel = (
-    <div className="grid grid-cols-5 gap-2 p-2 max-w-xs max-h-60 overflow-y-auto">
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, padding: 8, maxWidth: 280, maxHeight: 240, overflowY: "auto" }}>
       {STICKERS.map((sticker) => (
         <Tooltip key={sticker.id} title={sticker.name}>
           <img
             src={sticker.url}
             alt={sticker.name}
-            className="w-12 h-12 object-contain cursor-pointer hover:scale-110 transition-transform"
+            style={{ width: 44, height: 44, objectFit: "contain", cursor: "pointer", transition: "transform 0.15s ease" }}
             onClick={() => handleSendSticker(sticker.url)}
           />
         </Tooltip>
@@ -586,13 +665,13 @@ const ChatPage = () => {
     </div>
   );
 
-  // Emoji Panel Component
   const emojiPanel = (
-    <div className="grid grid-cols-8 gap-1 p-2 max-w-sm max-h-60 overflow-y-auto">
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4, padding: 8, maxWidth: 300, maxHeight: 240, overflowY: "auto" }}>
       {EMOJIS.map((emoji, idx) => (
         <span
           key={idx}
-          className="text-2xl p-1 cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-800 rounded transition-all text-center"
+          style={{ fontSize: 24, padding: 4, cursor: "pointer", textAlign: "center", borderRadius: 4 }}
+          className="hover:bg-gray-100"
           onClick={() => handleEmojiClick(emoji)}
         >
           {emoji}
@@ -602,53 +681,100 @@ const ChatPage = () => {
   );
 
   return (
-    <div className="flex h-[calc(100vh-64px)] bg-gray-100 dark:bg-zinc-900 overflow-hidden">
-      {/* Sidebar - Hộp chat */}
-      <div className="w-80 md:w-96 flex flex-col bg-white border-r border-gray-200 dark:bg-zinc-800 dark:border-zinc-700 flex-shrink-0">
-        <div className="p-4 border-b border-gray-100 dark:border-zinc-700 flex justify-between items-center">
-          <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">
-            <MessageOutlined className="text-blue-500" />
-            Nhắn tin
-          </h2>
-          <div className="flex gap-2">
-            <Tooltip title="Tạo chat mới">
-              <Button
-                type="text"
-                shape="circle"
-                icon={<MessageOutlined />}
-                onClick={() => setIsNewChatModalOpen(true)}
-              />
-            </Tooltip>
-            <Tooltip title="Tạo nhóm chat">
-              <Button
-                type="text"
-                shape="circle"
-                icon={<UsergroupAddOutlined />}
-                onClick={() => setIsGroupModalOpen(true)}
-              />
-            </Tooltip>
-          </div>
+    <div className="chat-container">
+      {/* Cột 1: Sidebar tin nhắn */}
+      <div className="chat-sidebar">
+        <div className="chat-sidebar-header">
+          <span className="chat-sidebar-title">Tin nhắn</span>
+          <Button
+            type="text"
+            shape="circle"
+            icon={<EditOutlined style={{ fontSize: 18, color: "#7F00FD" }} />}
+            onClick={() => setIsNewChatModalOpen(true)}
+            style={{ backgroundColor: "rgba(127, 0, 253, 0.08)" }}
+          />
         </div>
 
-        {/* Danh sách các phòng chat */}
-        <div className="flex-1 overflow-y-auto">
+        {/* Tìm kiếm */}
+        <div className="chat-search-container">
+          <Input
+            placeholder="Tìm kiếm tin nhắn..."
+            prefix={<SearchOutlined style={{ color: "#8c8c8c" }} />}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="chat-search-input"
+            allowClear
+          />
+        </div>
+
+        {/* Tabs: Cá nhân / Nhóm */}
+        <div className="chat-tabs">
+          <button
+            onClick={() => setActiveTab("personal")}
+            className={`chat-tab-button ${activeTab === "personal" ? "active" : ""}`}
+          >
+            Cá nhân
+          </button>
+          <button
+            onClick={() => setActiveTab("group")}
+            className={`chat-tab-button ${activeTab === "group" ? "active" : ""}`}
+          >
+            Nhóm
+          </button>
+        </div>
+
+        {/* Content list for Personal Tab (Online users & list) */}
+        {activeTab === "personal" && (
+          <div className="online-users-section">
+            <div className="online-users-label">Đang hoạt động</div>
+            <div className="online-users-list">
+              {onlineFriends.length > 0 ? (
+                onlineFriends.map((f) => (
+                  <div key={f._id} className="online-user-item" onClick={() => handleStartNewChat(f._id)}>
+                    <Badge dot status="success" offset={[-2, 32]}>
+                      <Avatar src={getMediaUrl(f.avatar)} size={38}>
+                        {f.name[0].toUpperCase()}
+                      </Avatar>
+                    </Badge>
+                    <span className="online-user-name">{f.name.split(" ").pop()}</span>
+                  </div>
+                ))
+              ) : (
+                <div style={{ fontSize: 11, color: "gray", padding: "4px 0" }}>Chưa có bạn bè online</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Content list for Group Tab (Create new button) */}
+        {activeTab === "group" && (
+          <div className="create-group-btn-container">
+            <Button
+              className="create-group-btn"
+              onClick={() => setIsGroupModalOpen(true)}
+              icon={<TeamOutlined />}
+            >
+              Tạo nhóm chat mới
+            </Button>
+          </div>
+        )}
+
+        {/* List of chat items */}
+        <div className="chat-list-container">
           {loadingConv ? (
-            <div className="flex justify-center p-8">
+            <div style={{ display: "flex", justifyContent: "center", padding: 24 }}>
               <Spin />
             </div>
-          ) : conversations.length === 0 ? (
-            <div className="text-center p-8 text-gray-400">
-              Chưa có cuộc trò chuyện nào. Bấm nút tạo chat mới để bắt đầu.
+          ) : filteredConversations.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 24, color: "gray", fontSize: 13 }}>
+              Chưa có hội thoại nào. Gõ tìm kiếm hoặc nhấp bút 📝 để chat.
             </div>
           ) : (
             <List
-              dataSource={conversations}
+              dataSource={filteredConversations}
               renderItem={(conv) => {
                 const details = getConvDetails(conv);
                 const isSelected = selectedConv && selectedConv._id === conv._id;
-
-                // Xem có tin nhắn chưa đọc hay không
-                // Trực quan: nếu tin nhắn cuối không rỗng, không phải do mình gửi, và mình chưa nằm trong seenBy
                 const hasUnread =
                   conv.lastMessage &&
                   conv.lastMessage.sender?._id !== currentUser?._id &&
@@ -658,34 +784,33 @@ const ChatPage = () => {
 
                 return (
                   <List.Item
-                    className={`px-4 py-3 cursor-pointer hover:bg-gray-50 transition-all border-b border-gray-50 ${isSelected ? "bg-blue-50/70 hover:bg-blue-50" : ""
-                      }`}
+                    className={`chat-list-item ${isSelected ? "selected" : ""}`}
                     onClick={() => selectConversation(conv)}
                   >
-                    <div className="flex items-center gap-3 w-full">
-                      <Badge dot={details.isOnline} color="green" offset={[-2, 38]}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left" }}>
+                      <Badge dot={details.isOnline} color="green" offset={[-2, 34]}>
                         <Avatar
                           src={getMediaUrl(details.avatar)}
-                          size={46}
+                          size={42}
                           icon={conv.isGroup ? <TeamOutlined /> : null}
-                          className="bg-blue-500 text-white"
+                          style={{ backgroundColor: isSelected ? "#ffffff" : "#7F00FD", color: isSelected ? "#7F00FD" : "#ffffff", fontWeight: "bold" }}
                         >
-                          {details.name[0]}
+                          {details.name[0].toUpperCase()}
                         </Avatar>
                       </Badge>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-center mb-1">
-                          <span className={`font-semibold text-sm truncate ${hasUnread ? "text-black font-bold" : "text-gray-800"}`}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                          <span className={`chat-item-name ${hasUnread ? "unread" : ""}`}>
                             {details.name}
                           </span>
-                          <span className="text-[11px] text-gray-400">
+                          <span style={{ fontSize: 10, color: "#8c8c8c" }}>
                             {conv.lastMessage
-                              ? dayjs(conv.lastMessage.createdAt).fromNow(true)
+                              ? formatTimeAgo(conv.lastMessage.createdAt)
                               : ""}
                           </span>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className={`text-xs truncate ${hasUnread ? "text-blue-500 font-medium" : "text-gray-500"}`}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span className={`chat-item-snippet ${hasUnread ? "unread" : ""}`}>
                             {conv.lastMessage
                               ? conv.lastMessage.isRecalled
                                 ? "Tin nhắn đã bị thu hồi"
@@ -695,7 +820,7 @@ const ChatPage = () => {
                               : "Chưa có tin nhắn"}
                           </span>
                           {hasUnread && (
-                            <Badge status="processing" color="blue" />
+                            <Badge color="#7F00FD" status="processing" />
                           )}
                         </div>
                       </div>
@@ -708,28 +833,28 @@ const ChatPage = () => {
         </div>
       </div>
 
-      {/* Main chat window */}
-      <div className="flex flex-col flex-1 bg-gray-50 dark:bg-zinc-900 min-w-0">
+      {/* Cột 2: Khung Chat chính */}
+      <div className="chat-main">
         {selectedConv ? (
           <>
             {/* Header phòng chat */}
-            <div className="h-16 px-6 bg-white border-b border-gray-200 dark:bg-zinc-800 dark:border-zinc-700 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Badge dot={getConvDetails(selectedConv).isOnline} color="green">
+            <div style={{ height: 64, borderBottom: "1px solid #edf0f4", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", backgroundColor: "#ffffff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <Badge dot={getConvDetails(selectedConv).isOnline} color="green" offset={[-2, 30]}>
                   <Avatar
                     src={getMediaUrl(getConvDetails(selectedConv).avatar)}
-                    size={40}
+                    size={38}
                     icon={selectedConv.isGroup ? <TeamOutlined /> : null}
-                    className="bg-blue-500 text-white"
+                    style={{ backgroundColor: "#7F00FD", fontWeight: "bold" }}
                   >
-                    {getConvDetails(selectedConv).name[0]}
+                    {getConvDetails(selectedConv).name[0].toUpperCase()}
                   </Avatar>
                 </Badge>
-                <div>
-                  <h3 className="font-semibold text-sm text-gray-800 dark:text-white">
+                <div style={{ textAlign: "left" }}>
+                  <h3 style={{ fontSize: 14.5, fontWeight: 700, color: "#1a1a1a", margin: 0 }}>
                     {getConvDetails(selectedConv).name}
                   </h3>
-                  <span className="text-xs text-gray-400">
+                  <span style={{ fontSize: 11, color: "#8c8c8c" }}>
                     {selectedConv.isGroup
                       ? `${selectedConv.participants.length} thành viên`
                       : getConvDetails(selectedConv).isOnline
@@ -739,30 +864,35 @@ const ChatPage = () => {
                 </div>
               </div>
 
-              <div>
-                <Tooltip title="Thông tin cuộc trò chuyện">
+              {/* Icon actions */}
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <Tooltip title="Gọi điện">
+                  <Button type="text" shape="circle" icon={<PhoneOutlined style={{ fontSize: 18, color: "#65676b" }} />} onClick={() => showNotSupportedMessage("Gọi điện")} />
+                </Tooltip>
+                <Tooltip title="Gọi Video">
+                  <Button type="text" shape="circle" icon={<VideoCameraOutlined style={{ fontSize: 18, color: "#65676b" }} />} onClick={() => showNotSupportedMessage("Gọi Video")} />
+                </Tooltip>
+                <Tooltip title={showRightPanel ? "Ẩn thông tin" : "Hiện thông tin"}>
                   <Button
-                    type={showRightPanel ? "primary" : "text"}
+                    type="text"
                     shape="circle"
-                    icon={<InfoCircleOutlined />}
+                    icon={<InfoCircleOutlined style={{ fontSize: 18, color: showRightPanel ? "#7F00FD" : "#65676b" }} />}
                     onClick={() => setShowRightPanel(!showRightPanel)}
                   />
                 </Tooltip>
               </div>
             </div>
 
-            {/* Khung tin nhắn */}
-            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+            {/* Khung chứa các tin nhắn */}
+            <div className="chat-messages-scroll">
               {loadingMsgs ? (
-                <div className="flex justify-center p-8 my-auto">
+                <div style={{ display: "flex", justifyContent: "center", padding: 24, margin: "auto" }}>
                   <Spin size="large" />
                 </div>
               ) : (
                 messages.map((msg, index) => {
                   const isMyMsg = msg.sender?._id === currentUser?._id;
                   const showSenderName = selectedConv.isGroup && !isMyMsg;
-
-                  // Lấy avatar của những người đã xem tin nhắn này (ngoại trừ người gửi)
                   const seenAvatars = msg.seenBy
                     ? msg.seenBy
                       .filter((s) => s.user?._id !== msg.sender?._id)
@@ -772,46 +902,42 @@ const ChatPage = () => {
                   return (
                     <div
                       key={msg._id}
-                      className={`flex gap-3 max-w-[70%] ${isMyMsg ? "self-end flex-row-reverse" : "self-start"
-                        }`}
+                      className={`chat-message-row ${isMyMsg ? "outgoing" : "incoming"}`}
                     >
                       {!isMyMsg && (
                         <Avatar
                           src={getMediaUrl(msg.sender?.avatar)}
                           size={32}
-                          className="mt-1"
+                          style={{ marginTop: 2, backgroundColor: "#7F00FD", fontWeight: "bold" }}
                         >
-                          {msg.sender?.name?.[0]}
+                          {msg.sender?.name?.[0].toUpperCase()}
                         </Avatar>
                       )}
-                      <div className="flex flex-col">
+                      <div style={{ display: "flex", flexDirection: "column", maxWidth: "100%", alignItems: isMyMsg ? "flex-end" : "flex-start" }}>
                         {showSenderName && (
-                          <span className="text-[11px] text-gray-400 mb-1 ml-1">
+                          <span style={{ fontSize: 10, color: "#8c8c8c", marginBottom: 3, marginLeft: 2 }}>
                             {msg.sender?.name}
                           </span>
                         )}
-                        <div
-                          className={`p-3 rounded-2xl shadow-sm text-sm relative group transition-all ${isMyMsg
-                            ? "bg-blue-500 text-white rounded-tr-none"
-                            : "bg-white text-gray-800 dark:bg-zinc-800 dark:text-white rounded-tl-none"
-                            }`}
-                        >
+                        <div className={`message-bubble ${isMyMsg ? "outgoing" : "incoming"} group`}>
                           {renderMessageContent(msg)}
-
-                          <div className="text-[9px] text-gray-300 text-right mt-1">
+                          <div className="message-time-inner">
                             {dayjs(msg.createdAt).format("HH:mm")}
                           </div>
 
-                          {/* Hover action to recall message (only for my messages & not recalled yet) */}
+                          {/* Action recall button */}
                           {isMyMsg && !msg.isRecalled && (
-                            <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div
+                              style={{ position: "absolute", right: "102%", top: "50%", transform: "translateY(-50%)", transition: "opacity 0.2s ease" }}
+                              className="opacity-0 group-hover:opacity-100"
+                            >
                               <Tooltip title="Thu hồi tin nhắn">
                                 <Button
                                   type="text"
                                   shape="circle"
                                   danger
                                   size="small"
-                                  icon={<DeleteOutlined />}
+                                  icon={<CloseOutlined style={{ fontSize: 10 }} />}
                                   onClick={() => handleRecallMessage(msg._id)}
                                 />
                               </Tooltip>
@@ -819,24 +945,22 @@ const ChatPage = () => {
                           )}
                         </div>
 
-                        {/* Seen indicators (small avatars) under the latest message */}
+                        {/* Read/Seen Indicators */}
                         {index === messages.length - 1 && seenAvatars.length > 0 && (
-                          <div className={`flex gap-1 mt-1 ${isMyMsg ? "justify-end" : "justify-start"}`}>
+                          <div style={{ display: "flex", gap: 3, marginTop: 4, justifyContent: isMyMsg ? "flex-end" : "flex-start" }}>
                             {seenAvatars.slice(0, 5).map((u) => (
                               <Tooltip key={u._id} title={`${u.name} đã xem`}>
                                 <Avatar
                                   src={getMediaUrl(u.avatar)}
                                   size={14}
-                                  className="border border-white"
+                                  style={{ border: "1px solid #ffffff", backgroundColor: "#7F00FD" }}
                                 >
-                                  {u.name[0]}
+                                  {u.name[0].toUpperCase()}
                                 </Avatar>
                               </Tooltip>
                             ))}
                             {seenAvatars.length > 5 && (
-                              <span className="text-[10px] text-gray-400">
-                                +{seenAvatars.length - 5}
-                              </span>
+                              <span style={{ fontSize: 9, color: "gray" }}>+{seenAvatars.length - 5}</span>
                             )}
                           </div>
                         )}
@@ -846,90 +970,84 @@ const ChatPage = () => {
                 })
               )}
 
-              {/* Typing indicator */}
+              {/* Typing indicators */}
               {typingUsers.length > 0 && (
-                <div className="flex gap-3 max-w-[70%] self-start items-center">
-                  <Avatar size={32} className="bg-gray-300">
-                    ...
-                  </Avatar>
-                  <div className="bg-white dark:bg-zinc-800 px-4 py-2 rounded-2xl rounded-tl-none text-xs text-gray-500 shadow-sm flex items-center gap-2">
+                <div className="chat-message-row incoming" style={{ alignItems: "center" }}>
+                  <Avatar size={32} style={{ backgroundColor: "#8c8c8c" }}>...</Avatar>
+                  <div style={{ backgroundColor: "#ffffff", padding: "8px 12px", borderRadius: 16, borderBottomLeftRadius: 4, display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#8c8c8c" }}>
                     <span>
-                      {typingUsers.map((u) => u.userName).join(", ")}{" "}
-                      {typingUsers.length === 1 ? "đang nhập" : "đang nhập"}
+                      {typingUsers.map((u) => u.userName).join(", ")} đang nhập
                     </span>
                     <span className="flex gap-1 items-center">
-                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></span>
-                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-150"></span>
-                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-300"></span>
+                      <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce"></span>
+                      <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce delay-150"></span>
+                      <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce delay-300"></span>
                     </span>
                   </div>
                 </div>
               )}
-
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input panel - Gửi tin nhắn */}
-            <div className="p-4 bg-white border-t border-gray-200 dark:bg-zinc-800 dark:border-zinc-700 flex flex-col gap-2">
-              {/* File list preview */}
+            {/* Input area */}
+            <div className="chat-input-panel">
+              {/* File list Staged Preview */}
               {fileList.length > 0 && (
-                <div className="flex flex-wrap gap-2 p-2 bg-gray-50 dark:bg-zinc-900 rounded-lg">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: 8, backgroundColor: "#f9fafb", borderRadius: 8 }}>
                   {fileList.map((file, idx) => (
-                    <div key={idx} className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-lg text-xs shadow-sm">
-                      <FileOutlined className="text-blue-500" />
-                      <span className="max-w-[150px] truncate">{file.name}</span>
+                    <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", backgroundColor: "#ffffff", borderRadius: 6, fontSize: 11, border: "1px solid #edf0f4" }}>
+                      <FileOutlined style={{ color: "#7F00FD" }} />
+                      <span className="truncate" style={{ maxWidth: 120 }}>{file.name}</span>
                       <Button
                         type="text"
                         size="small"
                         danger
                         shape="circle"
-                        icon={<CloseOutlined style={{ fontSize: 10 }} />}
-                        onClick={() => {
-                          setFileList((prev) => prev.filter((_, i) => i !== idx));
-                        }}
+                        icon={<CloseOutlined style={{ fontSize: 8 }} />}
+                        onClick={() => setFileList((prev) => prev.filter((_, i) => i !== idx))}
                       />
                     </div>
                   ))}
                 </div>
               )}
 
-              <div className="flex items-center gap-2">
-                {/* File Upload button */}
+              <div className="chat-input-row">
+                {/* Upload Image */}
                 <Upload
                   fileList={fileList}
                   beforeUpload={(file) => {
                     setFileList((prev) => [...prev, file]);
-                    return false; // Prevent automatic upload
+                    return false;
                   }}
                   showUploadList={false}
                   multiple
                 >
-                  <Tooltip title="Đính kèm ảnh/video/file">
-                    <Button type="text" shape="circle" size="large" icon={<PaperClipOutlined />} />
+                  <Tooltip title="Gửi ảnh/tệp tin">
+                    <Button type="text" shape="circle" size="large" icon={<PaperClipOutlined style={{ fontSize: 20, color: "#65676b" }} />} />
                   </Tooltip>
                 </Upload>
 
-                {/* Sticker Popover */}
+                {/* Stickers */}
                 <Popover content={stickerPanel} title="Stickers" trigger="click" placement="topLeft">
-                  <Tooltip title="Gửi Sticker">
-                    <Button type="text" shape="circle" size="large" icon={<PictureOutlined />} />
+                  <Tooltip title="Gửi sticker">
+                    <Button type="text" shape="circle" size="large" icon={<PictureOutlined style={{ fontSize: 20, color: "#65676b" }} />} />
                   </Tooltip>
                 </Popover>
 
-                {/* Emoji Popover */}
+                {/* Emoji */}
                 <Popover content={emojiPanel} title="Emoji" trigger="click" placement="topLeft">
                   <Tooltip title="Chọn Emoji">
-                    <Button type="text" shape="circle" size="large" icon={<SmileOutlined />} />
+                    <Button type="text" shape="circle" size="large" icon={<SmileOutlined style={{ fontSize: 20, color: "#65676b" }} />} />
                   </Tooltip>
                 </Popover>
 
-                {/* Chat Input */}
+                {/* Chat Input Field */}
                 <Input
                   placeholder="Nhập tin nhắn..."
                   value={messageInput}
                   onChange={handleInputChange}
                   onPressEnter={() => handleSendMessage()}
-                  className="rounded-full py-2 px-4 border-gray-200"
+                  className="chat-text-input"
                   size="large"
                 />
 
@@ -938,45 +1056,46 @@ const ChatPage = () => {
                   type="primary"
                   shape="circle"
                   size="large"
-                  icon={<SendOutlined />}
+                  icon={<SendOutlined style={{ fontSize: 16 }} />}
                   onClick={() => handleSendMessage()}
+                  className="chat-send-btn"
                   disabled={!messageInput.trim() && fileList.length === 0}
                 />
               </div>
             </div>
           </>
         ) : (
-          <div className="flex flex-col items-center justify-center flex-1 text-gray-400">
-            <MessageOutlined style={{ fontSize: 64, color: "#d9d9d9" }} />
-            <h3 className="mt-4 text-lg font-medium">Chào mừng đến với Tegram Chat</h3>
-            <p className="text-sm">Hãy chọn một cuộc hội thoại hoặc bắt đầu chat với bạn bè.</p>
-            <div className="mt-4 flex gap-3">
-              <Button type="primary" icon={<MessageOutlined />} onClick={() => setIsNewChatModalOpen(true)}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, color: "gray" }}>
+            <TeamOutlined style={{ fontSize: 64, color: "#d9d9d9" }} />
+            <h3 style={{ marginTop: 16, fontSize: 17, fontWeight: 700, color: "#1c1e21" }}>Chào mừng đến với Tegram Chat</h3>
+            <p style={{ fontSize: 13, color: "gray" }}>Hãy chọn một cuộc hội thoại từ menu trái hoặc bắt đầu chat với bạn bè.</p>
+            <div style={{ marginTop: 16, display: "flex", gap: 12 }}>
+              <Button type="primary" onClick={() => setIsNewChatModalOpen(true)} style={{ backgroundColor: "#7F00FD" }}>
                 Nhắn tin mới
               </Button>
-              <Button icon={<TeamOutlined />} onClick={() => setIsGroupModalOpen(true)}>
-                Tạo nhóm chat
+              <Button onClick={() => setIsGroupModalOpen(true)}>
+                Tạo nhóm mới
               </Button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Thanh thông tin cuộc trò chuyện bên phải (Info Sidebar) */}
+      {/* Cột 3: Right Sidebar (Thông tin chat) */}
       {selectedConv && showRightPanel && (
-        <div className="w-72 md:w-80 flex-shrink-0 flex flex-col bg-white dark:bg-zinc-800 border-l border-gray-200 dark:border-zinc-700 p-6 overflow-y-auto items-center text-center">
+        <div className="chat-right-sidebar">
           <Avatar
             src={getMediaUrl(getConvDetails(selectedConv).avatar)}
             size={84}
             icon={selectedConv.isGroup ? <TeamOutlined /> : null}
-            className="bg-blue-500 text-white mb-4"
+            style={{ backgroundColor: "#7F00FD", fontWeight: "bold" }}
           >
-            {getConvDetails(selectedConv).name[0]}
+            {getConvDetails(selectedConv).name[0].toUpperCase()}
           </Avatar>
-          <h3 className="font-bold text-base text-gray-800 dark:text-white mb-1">
+          <h3 className="right-sidebar-name">
             {getConvDetails(selectedConv).name}
           </h3>
-          <div className="text-xs text-gray-400 mb-6">
+          <div className="right-sidebar-status">
             {selectedConv.isGroup
               ? `${selectedConv.participants.length} thành viên`
               : getConvDetails(selectedConv).isOnline
@@ -984,25 +1103,39 @@ const ChatPage = () => {
                 : "Ngoại tuyến"}
           </div>
 
-          {!selectedConv.isGroup && (
-            <Button
-              type="primary"
-              ghost
-              className="w-full mb-6 rounded-full"
-              onClick={() => {
-                const otherUser = selectedConv.participants.find((p) => p._id !== currentUser?._id);
-                if (otherUser) {
-                  navigate(`/profile/${otherUser._id}`);
-                }
-              }}
-            >
-              Xem trang cá nhân
-            </Button>
-          )}
+          {/* Hàng 3 icon tròn: Link trang cá nhân, Chuông thông báo, Tìm kiếm */}
+          <div className="right-sidebar-actions-row">
+            {!selectedConv.isGroup && getConvDetails(selectedConv).userId && (
+              <Tooltip title="Trang cá nhân">
+                <Button
+                  shape="circle"
+                  className="right-sidebar-action-btn"
+                  icon={<UserOutlined />}
+                  onClick={() => navigate(`/profile/${getConvDetails(selectedConv).userId}`)}
+                />
+              </Tooltip>
+            )}
+            <Tooltip title="Tắt thông báo">
+              <Button
+                shape="circle"
+                className="right-sidebar-action-btn"
+                icon={<BellOutlined />}
+                onClick={() => showNotSupportedMessage("Tắt thông báo")}
+              />
+            </Tooltip>
+            <Tooltip title="Tìm kiếm tin nhắn">
+              <Button
+                shape="circle"
+                className="right-sidebar-action-btn"
+                icon={<SearchOutlined />}
+                onClick={() => showNotSupportedMessage("Tìm kiếm tin nhắn")}
+              />
+            </Tooltip>
+          </div>
 
-          {/* Media section */}
-          <div className="w-full mb-6 text-left">
-            <div className="font-semibold text-sm text-gray-700 dark:text-gray-200 border-b border-gray-100 dark:border-zinc-700 pb-2 mb-3">
+          {/* File phương tiện */}
+          <div className="right-sidebar-section">
+            <div className="right-sidebar-section-title">
               File phương tiện ({
                 messages.filter((msg) => !msg.isRecalled && (msg.type === "image" || msg.type === "video")).flatMap((msg) => msg.attachments).length
               })
@@ -1013,25 +1146,25 @@ const ChatPage = () => {
                 .flatMap((msg) => msg.attachments);
 
               if (media.length === 0) {
-                return <div className="text-xs text-gray-400 py-1 text-center">Chưa có ảnh/video</div>;
+                return <div style={{ fontSize: 12, color: "gray", padding: "4px 0", textAlign: "center" }}>Chưa có hình ảnh/video</div>;
               }
 
               return (
-                <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                <div className="right-sidebar-media-grid">
                   {media.map((att, idx) => (
                     <div
                       key={idx}
-                      className="aspect-square rounded overflow-hidden bg-gray-100 dark:bg-zinc-700 border dark:border-zinc-600 relative group cursor-pointer"
+                      className="right-sidebar-media-item"
                       onClick={() => {
                         Modal.info({
                           title: att.filename,
                           width: 800,
                           content: (
-                            <div className="flex justify-center p-2 bg-black rounded">
+                            <div style={{ display: "flex", justifyContent: "center", padding: 8, backgroundColor: "#000" }}>
                               {att.mimetype?.startsWith("video/") ? (
-                                <video src={getMediaUrl(att.url)} controls className="max-w-full max-h-[70vh]" />
+                                <video src={getMediaUrl(att.url)} controls style={{ maxWidth: "100%", maxHeight: "70vh" }} />
                               ) : (
-                                <img src={getMediaUrl(att.url)} alt={att.filename} className="max-w-full max-h-[70vh] object-contain" />
+                                <img src={getMediaUrl(att.url)} alt={att.filename} style={{ maxWidth: "100%", maxHeight: "70vh", objectFit: "contain" }} />
                               )}
                             </div>
                           ),
@@ -1041,11 +1174,11 @@ const ChatPage = () => {
                       }}
                     >
                       {att.mimetype?.startsWith("video/") ? (
-                        <div className="w-full h-full flex items-center justify-center bg-black/60 text-white text-[9px]">
+                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 9 }}>
                           Video
                         </div>
                       ) : (
-                        <img src={getMediaUrl(att.url)} alt={att.filename} className="w-full h-full object-cover" />
+                        <img src={getMediaUrl(att.url)} alt={att.filename} />
                       )}
                     </div>
                   ))}
@@ -1054,9 +1187,9 @@ const ChatPage = () => {
             })()}
           </div>
 
-          {/* Documents section */}
-          <div className="w-full text-left">
-            <div className="font-semibold text-sm text-gray-700 dark:text-gray-200 border-b border-gray-100 dark:border-zinc-700 pb-2 mb-3">
+          {/* Files / Tài liệu */}
+          <div className="right-sidebar-section">
+            <div className="right-sidebar-section-title">
               File / Tài liệu ({
                 messages
                   .filter((msg) => !msg.isRecalled && msg.type === "file")
@@ -1071,37 +1204,66 @@ const ChatPage = () => {
                 .filter((att) => !att.mimetype?.startsWith("image/") && !att.mimetype?.startsWith("video/"));
 
               if (docs.length === 0) {
-                return <div className="text-xs text-gray-400 py-1 text-center">Chưa có tài liệu</div>;
+                return <div style={{ fontSize: 12, color: "gray", padding: "4px 0", textAlign: "center" }}>Chưa có tài liệu</div>;
               }
 
               return (
-                <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                <div className="right-sidebar-file-list">
                   {docs.map((att, idx) => (
                     <a
                       key={idx}
                       href={getMediaUrl(att.url)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-zinc-900 hover:bg-gray-100 dark:hover:bg-zinc-800 border dark:border-zinc-700 text-gray-700 dark:text-gray-200 text-xs rounded transition-all truncate"
+                      className="right-sidebar-file-item"
                     >
-                      <FileOutlined className="text-blue-500 flex-shrink-0" />
-                      <span className="truncate flex-1">{att.filename}</span>
+                      <FileOutlined style={{ color: "#7F00FD", fontSize: 16 }} />
+                      <span className="truncate" style={{ flex: 1 }}>{att.filename}</span>
                     </a>
                   ))}
                 </div>
               );
             })()}
           </div>
+
+          {/* Management Actions */}
+          {!selectedConv.isGroup && getConvDetails(selectedConv).userId && (
+            <div className="right-sidebar-section" style={{ marginTop: 12 }}>
+              <div className="right-sidebar-management-menu">
+                <button
+                  className="right-sidebar-menu-btn"
+                  onClick={() => showNotSupportedMessage("Hạn chế")}
+                >
+                  <StopOutlined />
+                  <span>Hạn chế</span>
+                </button>
+                <button
+                  className="right-sidebar-menu-btn danger"
+                  onClick={() => handleBlockUser(getConvDetails(selectedConv).userId)}
+                >
+                  <StopOutlined />
+                  <span>Chặn</span>
+                </button>
+                <button
+                  className="right-sidebar-menu-btn danger"
+                  onClick={() => handleReportUser(getConvDetails(selectedConv).userId)}
+                >
+                  <FlagOutlined />
+                  <span>Báo cáo</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Modal 1-1 Chat */}
+      {/* Modal 1-1 Chat Selection */}
       <Modal
         title="Nhắn tin với bạn bè"
         open={isNewChatModalOpen}
         onCancel={() => setIsNewChatModalOpen(false)}
         footer={null}
-        destroyOnHidden={true}
+        destroyOnHidden
       >
         <List
           dataSource={friends}
@@ -1109,9 +1271,10 @@ const ChatPage = () => {
             <List.Item
               className="cursor-pointer hover:bg-gray-50 px-4 rounded transition-colors"
               onClick={() => handleStartNewChat(friend._id)}
+              style={{ cursor: "pointer" }}
             >
               <List.Item.Meta
-                avatar={<Avatar src={getMediaUrl(friend.avatar)}>{friend.name[0]}</Avatar>}
+                avatar={<Avatar src={getMediaUrl(friend.avatar)}>{friend.name[0].toUpperCase()}</Avatar>}
                 title={friend.name}
                 description={friend.email}
               />
@@ -1121,7 +1284,7 @@ const ChatPage = () => {
         />
       </Modal>
 
-      {/* Modal Group Chat */}
+      {/* Modal Group Chat Creation */}
       <Modal
         title="Tạo nhóm chat mới"
         open={isGroupModalOpen}
@@ -1133,11 +1296,11 @@ const ChatPage = () => {
         }}
         okText="Tạo nhóm"
         cancelText="Hủy"
-        destroyOnHidden={true}
+        destroyOnClose
       >
-        <div className="flex flex-col gap-4 py-2">
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "8px 0" }}>
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">TÊN NHÓM CHAT</label>
+            <label style={{ display: "block", fontSize: 11, fontWeight: "bold", color: "#8c8c8c", marginBottom: 6 }}>TÊN NHÓM CHAT</label>
             <Input
               placeholder="Nhập tên nhóm..."
               value={groupName}
@@ -1146,25 +1309,25 @@ const ChatPage = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2">CHỌN THÀNH VIÊN (ÍT NHẤT 2 NGƯỜI BẠN)</label>
-            <div className="max-h-60 overflow-y-auto border border-gray-100 rounded-lg p-2">
+            <label style={{ display: "block", fontSize: 11, fontWeight: "bold", color: "#8c8c8c", marginBottom: 6 }}>CHỌN THÀNH VIÊN (ÍT NHẤT 2 NGƯỜI BẠN)</label>
+            <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid #edf0f4", borderRadius: 8, padding: 8 }}>
               <Checkbox.Group
                 value={selectedFriends}
                 onChange={setSelectedFriends}
-                className="w-full flex flex-col gap-2"
+                style={{ width: "100%", display: "flex", flexDirection: "column", gap: 8 }}
               >
                 {friends.map((friend) => (
-                  <div key={friend._id} className="flex items-center gap-2 py-1 px-2 hover:bg-gray-50 rounded">
+                  <div key={friend._id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px" }} className="hover:bg-gray-50 rounded">
                     <Checkbox value={friend._id} />
-                    <Avatar src={getMediaUrl(friend.avatar)} size={28} className="ml-1">
-                      {friend.name[0]}
+                    <Avatar src={getMediaUrl(friend.avatar)} size={28} style={{ marginLeft: 4 }}>
+                      {friend.name[0].toUpperCase()}
                     </Avatar>
-                    <span className="text-sm ml-1">{friend.name}</span>
+                    <span style={{ fontSize: 14, marginLeft: 4 }}>{friend.name}</span>
                   </div>
                 ))}
               </Checkbox.Group>
               {friends.length === 0 && (
-                <div className="text-center p-4 text-gray-400 text-xs">
+                <div style={{ textAlign: "center", padding: 16, color: "gray", fontSize: 12 }}>
                   Không tìm thấy bạn bè nào để tạo nhóm.
                 </div>
               )}

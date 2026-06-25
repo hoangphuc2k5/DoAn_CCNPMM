@@ -50,6 +50,7 @@ routerAPI.get("/profile/:userId", profileController.getProfile);
 routerAPI.get("/profile/:userId/posts", profileController.getUserPosts);
 routerAPI.get("/profile/:userId/friends", profileController.getUserFriends);
 routerAPI.get("/profile/:userId/followers", profileController.getUserFollowers);
+routerAPI.get("/profile/:userId/following", profileController.getUserFollowing);
 routerAPI.get("/profile/:userId/media", profileController.getUserMedia);
 
 routerAPI.post("/posts", socialController.createPost);

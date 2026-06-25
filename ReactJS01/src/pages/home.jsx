@@ -386,42 +386,7 @@ const HomePage = () => {
   });
 
   return (
-    <div className="social-page">
-      <aside className="social-left-rail">
-        <Card className="social-panel">
-          <Space direction="vertical" size={14} style={{ width: "100%" }}>
-            <div className="social-profile-row">
-              <Avatar
-                size={42}
-                src={getMediaUrl(userProfile?.avatar)}
-                icon={<UserOutlined />}
-              >
-                {displayName[0]}
-              </Avatar>
-              <div className="min-w-0">
-                <Typography.Text strong ellipsis>
-                  {displayName}
-                </Typography.Text>
-                <div className="social-muted">{user?.email}</div>
-              </div>
-            </div>
-            <Link className="social-nav-item" to="/">
-              <HomeOutlined /> Bảng tin
-            </Link>
-            <button
-              className="social-nav-item"
-              onClick={() => setNotificationOpen(true)}
-            >
-              <BellOutlined /> Thông báo
-              {unread ? <Badge count={unread} size="small" /> : null}
-            </button>
-            <Link className="social-nav-item" to="/friends">
-              <TeamOutlined /> Bạn bè
-            </Link>
-          </Space>
-        </Card>
-      </aside>
-
+    <div className="home-page-layout">
       <main className="social-feed">
         <Card className="composer-card">
           <div className="composer-head">
