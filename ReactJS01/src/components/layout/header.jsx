@@ -1,141 +1,72 @@
-import React, { useContext, useState } from "react";
-import {
-  UsergroupAddOutlined,
-  HomeOutlined,
-  SettingOutlined,
-} from "@ant-design/icons";
-import { Menu } from "antd";
-import { Link, useNavigate } from "react-router-dom";
-import { AuthContext } from "../context/auth.context";
+import { useDispatch, useSelector } from "react-redux";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { logout } from "../../Redux/authSlice";
+
+const linkClass = (active) =>
+  `rounded-full px-4 py-2 text-sm font-medium transition ${
+    active ? "bg-[#ede9fe] text-[#7f00fd]" : "text-[#4b5563] hover:text-[#7f00fd]"
+  }`;
 
 const Header = () => {
+  const dispatch = useDispatch();
+  const location = useLocation();
   const navigate = useNavigate();
-  const { auth, setAuth } = useContext(AuthContext);
-  console.log(">>> check auth: ", auth);
-  const items = [
-    {
-      label: <Link to={"/"}>Home Page</Link>,
-      key: "home",
-      icon: <HomeOutlined />,
-    },
-    ...(auth.isAuthenticated
-      ? [
-          {
-import React, { useState } from 'react';
-import { UsergroupAddOutlined, HomeOutlined, SettingOutlined } from '@ant-design/icons';
-import { Menu } from 'antd';
-import { Link, useNavigate } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
-import { logout } from '../../Redux/authSlice';
+  const { isAuthenticated, user } = useSelector((state) => state.auth);
 
-const Header = () => {
-
-    const navigate = useNavigate();
-    const { auth, setAuth } = useContext(AuthContext);
-    const dispatch = useDispatch();
-    const { isAuthenticated, user } = useSelector((state) => state.auth);
-    const items = [
-        {
-            label: <Link to={"/"}>Home Page</Link>,
-            key: 'home',
-            icon: <HomeOutlined />,
-        },
-        ...(isAuthenticated ? [{
-            label: <Link to={"/user"}>Users</Link>,
-            key: "user",
-            icon: <UsergroupAddOutlined />,
-          },
-        ]
-      : []),
-
-    {
-      label: `Welcome ${auth?.user?.email ?? ""}`,
-      key: "SubMenu",
-      icon: <SettingOutlined />,
-      children: [
-        ...(auth.isAuthenticated
-          ? [
-              {
-                label: <Link to={"/profile"}>Profile</Link>,
-                key: "profile",
-              },
-              {
-                label: (
-                  <span
-                    onClick={() => {
-                      localStorage.removeItem("access_token");
-
-                      setAuth({
-                        isAuthenticated: false,
-                        user: {
-                          email: "",
-                          name: "",
-                        },
-                      });
-
-                      navigate("/");
-                    }}
-                  >
-                    Đăng xuất
-                  </span>
-                ),
-                key: "logout",
-              },
-            ]
-          : [
-              {
-                label: <Link to={"/login"}>Đăng nhập</Link>,
-                key: "login",
-              },
-            ]),
-      ],
-    },
-  ];
-        {
-            label: `Welcome ${user?.email ?? ""}`,
-            key: 'SubMenu',
-            icon: <SettingOutlined />,
-            children: [
-                ...(isAuthenticated ? [
-                    {
-                        label: <Link to={"/profile"}>Hồ sơ</Link>,
-                        key: 'profile',
-                    },
-                    {
-                        label: <span onClick={() => {
-                            setCurrent("home");
-                            dispatch(logout());
-                            navigate("/");
-                        }}>Đăng xuất</span>,
-                        key: 'logout',
-                    }
-                ] : [
-                    {
-                        label: <Link to={"/login"}>Đăng nhập</Link>,
-                        key: 'login',
-                    }
-                ]),
-            ],
-        },
-    ];
-
-    const [current, setCurrent] = useState('mail');
-    const onClick = (e) => {
-        setCurrent(e.key);
-    };
-    return <Menu onClick={onClick} selectedKeys={[current]} mode="horizontal" items={items} />;
-  const [current, setCurrent] = useState("mail");
-  const onClick = (e) => {
-    console.log("click ", e);
-    setCurrent(e.key);
+  const handleLogout = () => {
+    dispatch(logout());
+    navigate("/");
   };
+
   return (
-    <Menu
-      onClick={onClick}
-      selectedKeys={[current]}
-      mode="horizontal"
-      items={items}
-    />
+    <header className="border-b border-[#ede9fe] bg-white">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <Link to="/" className="text-lg font-bold text-[#7f00fd]">
+          Telegram
+        </Link>
+
+        <nav className="flex items-center gap-2">
+          <Link to="/" className={linkClass(location.pathname === "/")}>
+            Trang chủ
+          </Link>
+          <Link to="/user" className={linkClass(location.pathname === "/user")}>
+            Người dùng
+          </Link>
+          {isAuthenticated ? (
+            <>
+              <Link
+                to="/profile"
+                className={linkClass(location.pathname === "/profile")}
+              >
+                {user?.email || "Hồ sơ"}
+              </Link>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-full bg-[#7f00fd] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6b00d7]"
+              >
+                Đăng xuất
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/login"
+                className={linkClass(location.pathname === "/login")}
+              >
+                Đăng nhập
+              </Link>
+              <Link
+                to="/register"
+                className="rounded-full bg-[#7f00fd] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6b00d7]"
+              >
+                Đăng ký
+              </Link>
+            </>
+          )}
+        </nav>
+      </div>
+    </header>
   );
 };
 
