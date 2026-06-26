@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useSelector } from "react-redux";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Avatar,
   Input,
@@ -88,6 +88,7 @@ const ChatPage = () => {
   const currentUser = useSelector((state) => state.auth.user);
   const { socket, onlineUsers } = useSocket();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const getConvDetails = (conv) => {
     if (conv.isGroup) {
@@ -354,6 +355,18 @@ const ChatPage = () => {
         return details.name.toLowerCase().includes(searchQuery.toLowerCase());
       });
   }, [conversations, activeTab, searchQuery]);
+
+  useEffect(() => {
+    const targetConversationId = searchParams.get("conversationId");
+    if (!targetConversationId || !conversations.length) return;
+    if (selectedConv?._id === targetConversationId) return;
+
+    const targetConversation = conversations.find((conv) => conv._id === targetConversationId);
+    if (targetConversation) {
+      selectConversation(targetConversation);
+      setSearchParams({}, { replace: true });
+    }
+  }, [conversations, searchParams, selectedConv?._id]);
 
   // Input actions
   const handleInputChange = (e) => {

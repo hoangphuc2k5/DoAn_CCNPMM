@@ -16,6 +16,7 @@ const delay = require("../middleware/delay");
 const upload = require("../middleware/upload");
 const chatController = require("../controllers/chatController");
 const chatUpload = require("../middleware/chatUpload");
+const postUpload = require("../middleware/postUpload");
 
 const routerAPI = express.Router();
 
@@ -54,8 +55,12 @@ routerAPI.get("/profile/:userId/following", profileController.getUserFollowing);
 routerAPI.get("/profile/:userId/media", profileController.getUserMedia);
 
 routerAPI.post("/posts", socialController.createPost);
+routerAPI.post("/posts/upload-media", postUpload.array("media", 10), socialController.uploadPostMedia);
 routerAPI.get("/feed", socialController.getFeed);
 routerAPI.get("/posts/:postId", socialController.getPostById);
+routerAPI.put("/posts/:postId", socialController.updatePost);
+routerAPI.delete("/posts/:postId", socialController.deletePost);
+routerAPI.post("/posts/:postId/pin", socialController.pinPost);
 routerAPI.get("/trending", socialController.getTrendingTopics);
 routerAPI.use("/search", searchRouter);
 routerAPI.get("/relationships", socialController.getRelationships);
@@ -70,6 +75,10 @@ routerAPI.delete("/users/:targetUserId/follow", socialController.unfollowUser);
 routerAPI.post(
   "/users/:targetUserId/friend-request",
   socialController.sendFriendRequest,
+);
+routerAPI.delete(
+  "/users/:targetUserId/friend",
+  socialController.unfriendUser,
 );
 routerAPI.post(
   "/friend-requests/:requestId/respond",
@@ -88,6 +97,9 @@ routerAPI.patch(
   "/notifications/read-all",
   socialController.markAllNotificationsRead,
 );
+routerAPI.get("/notifications/push-public-key", socialController.getPushPublicKey);
+routerAPI.post("/notifications/push-subscriptions", socialController.subscribePush);
+routerAPI.delete("/notifications/push-subscriptions", socialController.unsubscribePush);
 
 // Chat routes
 routerAPI.get("/conversations", chatController.getConversations);

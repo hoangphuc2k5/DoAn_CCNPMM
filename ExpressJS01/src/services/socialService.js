@@ -8,6 +8,7 @@ const Post = require("../models/post");
 const Reaction = require("../models/reaction");
 const Report = require("../models/report");
 const User = require("../models/user");
+const { createNotification } = require("./notificationService");
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
 
@@ -19,8 +20,24 @@ const extractHashtags = (content = "") => {
 };
 
 const extractMentionKeys = (content = "") => {
-  const matches = content.match(/@[A-Za-z0-9_.-]+/g) || [];
-  return [...new Set(matches.map((item) => item.slice(1).toLowerCase()))];
+  const keys = [];
+  
+  // 1. Match markdown mentions: @[Name](emailPrefix)
+  const matchesMarkdown = [...content.matchAll(/@\[([^\]]+)\]\(([^)]+)\)/g)];
+  matchesMarkdown.forEach((match) => {
+    if (match[2]) {
+      keys.push(match[2].toLowerCase());
+    }
+  });
+
+  // 2. Match legacy mentions: @username
+  const matchesLegacy = content.match(/@[A-Za-z0-9_.-]+/g) || [];
+  matchesLegacy.forEach((item) => {
+    const key = item.slice(1).toLowerCase();
+    keys.push(key);
+  });
+
+  return [...new Set(keys)];
 };
 
 const findMentionedUsers = async (content) => {
@@ -44,20 +61,6 @@ const hasBlockBetween = async (userA, userB) => {
     ],
   });
   return Boolean(block);
-};
-
-const createNotification = async ({ recipient, actor, type, post, comment, metadata = {} }) => {
-  if (!recipient || (actor && String(recipient) === String(actor))) return null;
-  if (actor && (await hasBlockBetween(recipient, actor))) return null;
-
-  return Notification.create({
-    recipient,
-    actor,
-    type,
-    post: post || null,
-    comment: comment || null,
-    metadata,
-  });
 };
 
 const notifyMentionedUsers = async ({ users, actor, type, post, comment }) => {
@@ -99,6 +102,9 @@ const decoratePosts = async (posts, currentUserId) => {
         String(reaction.user) === String(currentUserId),
     );
 
+    const authorId = post.author?._id || post.author;
+    const isOwner = currentUserId ? String(authorId) === String(currentUserId) : false;
+
     return {
       ...postObject,
       comments: topComments,
@@ -109,8 +115,32 @@ const decoratePosts = async (posts, currentUserId) => {
           acc[reaction.type] = (acc[reaction.type] || 0) + 1;
           return acc;
         }, {}),
+      id: post._id,
+      privacy: post.visibility || "public",
+      likeCount: post.stats?.reactions || 0,
+      commentCount: post.stats?.comments || 0,
+      shareCount: post.stats?.shares || 0,
+      isLiked: Boolean(myReaction),
+      isOwner: isOwner,
+      isPinned: post.isPinned || false,
     };
   });
+};
+
+const getFriendUserIds = async (userId) => {
+  const friendships = await Friendship.find({
+    status: "accepted",
+    $or: [{ requester: userId }, { recipient: userId }],
+  }).select("requester recipient");
+
+  const friendIds = new Set();
+  friendships.forEach((item) => {
+    const reqId = String(item.requester);
+    const recId = String(item.recipient);
+    if (reqId !== String(userId)) friendIds.add(reqId);
+    if (recId !== String(userId)) friendIds.add(recId);
+  });
+  return [...friendIds];
 };
 
 const getVisibleAuthorIdsForFriendsFeed = async (userId) => {
@@ -152,7 +182,9 @@ const createPost = async (userId, payload) => {
     visibility: payload.visibility || "public",
     mentions: mentionedUsers.map((user) => user._id),
     hashtags: extractHashtags(content),
+    media: payload.media || [],
   });
+
 
   await notifyMentionedUsers({
     users: mentionedUsers,
@@ -171,11 +203,16 @@ const getFeed = async (userId, query) => {
   const page = Math.max(Number(query.page || 1), 1);
   const limit = Math.min(Math.max(Number(query.limit || 10), 1), 30);
   const mode = query.mode || "latest";
+  const friendUserIds = await getFriendUserIds(userId);
   const blockedUserIds = await getBlockedUserIds(userId);
 
   const filter = {
     author: { $nin: blockedUserIds.map(toObjectId) },
-    $or: [{ visibility: "public" }, { author: userId }],
+    $or: [
+      { visibility: "public" },
+      { visibility: "friends", author: { $in: friendUserIds.map(toObjectId) } },
+      { author: userId }
+    ],
   };
 
   if (mode === "friends") {
@@ -247,22 +284,23 @@ const getPostById = async (userId, postId) => {
 };
 
 const reactPost = async (userId, postId, type = "like") => {
+  const reactionType = type || "like";
   const post = await Post.findById(postId);
   if (!post) return { EC: 1, EM: "Không tìm thấy bài viết" };
   if (await hasBlockBetween(userId, post.author)) return { EC: 2, EM: "Không thể tương tác" };
 
   const existing = await Reaction.findOne({ post: postId, user: userId });
-  if (existing && existing.type === type) {
+  if (existing && existing.type === reactionType) {
     await existing.deleteOne();
     await Post.findByIdAndUpdate(postId, { $inc: { "stats.reactions": -1 } });
     return { EC: 0, EM: "Đã bỏ reaction", data: null };
   }
 
   if (existing) {
-    existing.type = type;
+    existing.type = reactionType;
     await existing.save();
   } else {
-    await Reaction.create({ post: postId, user: userId, type });
+    await Reaction.create({ post: postId, user: userId, type: reactionType });
     await Post.findByIdAndUpdate(postId, { $inc: { "stats.reactions": 1 } });
   }
 
@@ -271,10 +309,10 @@ const reactPost = async (userId, postId, type = "like") => {
     actor: userId,
     type: "post_reaction",
     post: postId,
-    metadata: { reaction: type },
+    metadata: { reaction: reactionType },
   });
 
-  return { EC: 0, EM: "Đã reaction", data: { type } };
+  return { EC: 0, EM: "Đã reaction", data: { type: reactionType } };
 };
 
 const commentPost = async (userId, postId, content, parentComment = null) => {
@@ -426,6 +464,22 @@ const respondFriendRequest = async (userId, requestId, action) => {
   return { EC: 0, EM: "Đã xử lý lời mời", data: friendship };
 };
 
+const unfriend = async (userId, targetUserId) => {
+  await Friendship.deleteOne({
+    $or: [
+      { requester: userId, recipient: targetUserId },
+      { requester: targetUserId, recipient: userId },
+    ],
+  });
+  await Follow.deleteMany({
+    $or: [
+      { follower: userId, following: targetUserId },
+      { follower: targetUserId, following: userId },
+    ],
+  });
+  return { EC: 0, EM: "Đã hủy kết bạn thành công" };
+};
+
 const blockUser = async (userId, targetUserId) => {
   if (String(userId) === String(targetUserId)) return { EC: 1, EM: "Không thể chặn chính mình" };
   const block = await Block.findOneAndUpdate(
@@ -575,6 +629,66 @@ const markAllNotificationsRead = async (userId) => {
   return { EC: 0, EM: "Đã đánh dấu tất cả thông báo là đã đọc" };
 };
 
+const updatePost = async (userId, postId, payload) => {
+  const post = await Post.findOne({ _id: postId, author: userId });
+  if (!post) return { EC: 1, EM: "Không tìm thấy bài viết hoặc bạn không phải là tác giả" };
+
+  const content = payload.content?.trim();
+  if (content !== undefined) {
+    if (!content) return { EC: 2, EM: "Nội dung bài viết không được rỗng" };
+    post.content = content;
+    post.hashtags = extractHashtags(content);
+    // Find mentioned users
+    const mentionedUsers = await findMentionedUsers(content);
+    post.mentions = mentionedUsers.map((user) => user._id);
+  }
+
+  if (payload.visibility !== undefined) {
+    post.visibility = payload.visibility;
+  }
+
+  if (payload.media !== undefined) {
+    post.media = payload.media;
+  }
+
+  await post.save();
+  const populatedPost = await Post.findById(post._id)
+    .populate("author", "name email avatar")
+    .populate("mentions", "name email");
+
+  const [decorated] = await decoratePosts([populatedPost], userId);
+
+  return { EC: 0, EM: "Cập nhật bài viết thành công", data: decorated };
+};
+
+const deletePost = async (userId, postId) => {
+  const post = await Post.findOne({ _id: postId, author: userId });
+  if (!post) return { EC: 1, EM: "Không tìm thấy bài viết hoặc bạn không phải là tác giả" };
+
+  await post.deleteOne();
+  await Comment.deleteMany({ post: postId });
+  await Reaction.deleteMany({ post: postId });
+
+  return { EC: 0, EM: "Xóa bài viết thành công" };
+};
+
+const pinPost = async (userId, postId) => {
+  const post = await Post.findOne({ _id: postId, author: userId });
+  if (!post) return { EC: 1, EM: "Không tìm thấy bài viết hoặc bạn không phải là tác giả" };
+
+  const newPinState = !post.isPinned;
+
+  if (newPinState) {
+    // Unpin all other posts of this user
+    await Post.updateMany({ author: userId, isPinned: true }, { isPinned: false });
+  }
+
+  post.isPinned = newPinState;
+  await post.save();
+
+  return { EC: 0, EM: newPinState ? "Đã ghim bài viết" : "Đã bỏ ghim bài viết", data: post };
+};
+
 module.exports = {
   blockUser,
   commentPost,
@@ -594,4 +708,8 @@ module.exports = {
   sharePost,
   unblockUser,
   unfollowUser,
+  updatePost,
+  deletePost,
+  pinPost,
+  unfriend,
 };

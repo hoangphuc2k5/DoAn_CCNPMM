@@ -213,7 +213,7 @@ const getUserPostsService = async (
     }
 
     const posts = await Post.find(query)
-      .sort({ createdAt: -1 })
+      .sort({ isPinned: -1, createdAt: -1 })
       .limit(limit + 1)
       .populate("author", "name avatar");
 

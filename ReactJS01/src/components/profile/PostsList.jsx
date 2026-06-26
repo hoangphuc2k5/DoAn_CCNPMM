@@ -7,9 +7,48 @@ import {
   MessageFilled,
   ShareAltOutlined,
   PlusOutlined,
+  PushpinFilled,
+  LockOutlined,
+  GlobalOutlined,
+  TeamOutlined,
 } from "@ant-design/icons";
 import { getMediaUrl } from "../../util/media";
 import "../../styles/user-profile.css";
+
+const renderPostContent = (text = "") => {
+  if (!text) return "";
+  
+  // Matches @[Display Name](emailPrefix)
+  const regex = /@\[([^\]]+)\]\(([^)]+)\)/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  
+  while ((match = regex.exec(text)) !== null) {
+    const matchIndex = match.index;
+    if (matchIndex > lastIndex) {
+      parts.push(text.substring(lastIndex, matchIndex));
+    }
+    
+    const displayName = match[1];
+    parts.push(
+      <span 
+        key={matchIndex} 
+        className="text-blue-600 font-bold hover:underline cursor-pointer"
+        style={{ color: "#1890ff", fontWeight: "bold" }}
+      >
+        {displayName}
+      </span>
+    );
+    lastIndex = regex.lastIndex;
+  }
+  
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  
+  return parts.length > 0 ? parts : text;
+};
 
 const PostsList = ({
   posts,
@@ -93,7 +132,12 @@ const PostsList = ({
               className="post-item-card"
               onClick={() => onPostClick?.(post)}
             >
-              <div className="post-card-thumb-wrapper">
+              <div className="post-card-thumb-wrapper relative">
+                {post.isPinned && (
+                  <div className="absolute top-2 left-2 z-10 bg-purple-600 text-white rounded-full px-2 py-0.5 text-xs flex items-center gap-1 font-semibold shadow-md">
+                    <PushpinFilled style={{ fontSize: "10px" }} /> Đã ghim
+                  </div>
+                )}
                 {mediaUrl ? (
                   <img src={mediaUrl} className="post-card-image" alt="Post thumbnail" />
                 ) : (
@@ -103,9 +147,9 @@ const PostsList = ({
                 )}
               </div>
               <div className="post-card-body">
-                <h3 className="post-card-title">{post.content}</h3>
+                <h3 className="post-card-title">{renderPostContent(post.content)}</h3>
                 <div className="post-card-footer">
-                  <div style={{ display: "flex", gap: "16px" }}>
+                  <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
                     <span className="post-card-stat">
                       <HeartFilled style={{ color: "#ff4d4f" }} />
                       {post.stats?.reactions || 0}
@@ -113,6 +157,9 @@ const PostsList = ({
                     <span className="post-card-stat">
                       <MessageFilled style={{ color: "#7F00FD" }} />
                       {post.stats?.comments || 0}
+                    </span>
+                    <span className="post-card-stat text-gray-400" title={post.visibility === "friends" ? "Bạn bè" : post.visibility === "private" ? "Riêng tư" : "Công khai"}>
+                      {post.visibility === "friends" ? <TeamOutlined /> : post.visibility === "private" ? <LockOutlined /> : <GlobalOutlined />}
                     </span>
                   </div>
                   <button

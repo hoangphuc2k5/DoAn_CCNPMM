@@ -1,4 +1,5 @@
 const socialService = require("../services/socialService");
+const pushService = require("../services/pushService");
 
 const currentUserId = (req) => req.user._id;
 
@@ -81,6 +82,14 @@ const respondFriendRequest = async (req, res) => {
   return res.status(200).json(data);
 };
 
+const unfriendUser = async (req, res) => {
+  const data = await socialService.unfriend(
+    currentUserId(req),
+    req.params.targetUserId,
+  );
+  return res.status(200).json(data);
+};
+
 const blockUser = async (req, res) => {
   const data = await socialService.blockUser(currentUserId(req), req.params.targetUserId);
   return res.status(200).json(data);
@@ -143,6 +152,56 @@ const markAllNotificationsRead = async (req, res) => {
   return res.status(200).json(data);
 };
 
+const getPushPublicKey = async (req, res) => {
+  const data = pushService.getPublicKey();
+  return res.status(200).json(data);
+};
+
+const subscribePush = async (req, res) => {
+  const data = await pushService.saveSubscription(
+    currentUserId(req),
+    req.body.subscription,
+    req.headers["user-agent"] || "",
+  );
+  return res.status(200).json(data);
+};
+
+const unsubscribePush = async (req, res) => {
+  const data = await pushService.removeSubscription(currentUserId(req), req.body.endpoint);
+  return res.status(200).json(data);
+};
+
+const updatePost = async (req, res) => {
+  const data = await socialService.updatePost(currentUserId(req), req.params.postId, req.body);
+  return res.status(200).json(data);
+};
+
+const deletePost = async (req, res) => {
+  const data = await socialService.deletePost(currentUserId(req), req.params.postId);
+  return res.status(200).json(data);
+};
+
+const pinPost = async (req, res) => {
+  const data = await socialService.pinPost(currentUserId(req), req.params.postId);
+  return res.status(200).json(data);
+};
+
+const uploadPostMedia = async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ EC: 1, EM: "Không có tệp tin nào được tải lên" });
+    }
+    const fileUrls = req.files.map((file) => {
+      const type = file.mimetype.startsWith("video/") ? "video" : "image";
+      return `/uploads/posts/${file.filename}#type=${type}`;
+    });
+    return res.status(200).json({ EC: 0, EM: "Tải tệp tin thành công", data: fileUrls });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ EC: 2, EM: "Lỗi upload media" });
+  }
+};
+
 module.exports = {
   blockUser,
   commentPost,
@@ -155,6 +214,9 @@ module.exports = {
   getTrendingTopics,
   markAllNotificationsRead,
   markNotificationRead,
+  getPushPublicKey,
+  subscribePush,
+  unsubscribePush,
   reactPost,
   replyComment,
   reportPost,
@@ -164,4 +226,9 @@ module.exports = {
   sharePost,
   unblockUser,
   unfollowUser,
+  updatePost,
+  deletePost,
+  pinPost,
+  uploadPostMedia,
+  unfriendUser,
 };

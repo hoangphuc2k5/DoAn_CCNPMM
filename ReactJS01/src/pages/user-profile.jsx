@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import { Spin, message, Empty, Modal, Input, Select, Button, Space } from "antd";
-import { LoadingOutlined, GlobalOutlined } from "@ant-design/icons";
+import { Spin, message, Empty, Modal, Input, Select, Button, Space, Tag } from "antd";
+import { LoadingOutlined, GlobalOutlined, PushpinOutlined, EditOutlined, DeleteOutlined, TeamOutlined, LockOutlined } from "@ant-design/icons";
 
 import {
   fetchUserProfile,
@@ -13,6 +13,10 @@ import {
   setActiveTab,
   resetUserProfile,
   clearError,
+  addCreatedPost,
+  updatePostInSlice,
+  deletePostInSlice,
+  togglePinInSlice,
 } from "../Redux/userProfileSlice";
 import ProfileHeader from "../components/profile/ProfileHeader";
 import ProfileTabs from "../components/profile/ProfileTabs";
@@ -20,6 +24,8 @@ import PostsList from "../components/profile/PostsList";
 import FriendsList from "../components/profile/FriendsList";
 import MediaGrid from "../components/profile/MediaGrid";
 import EditProfileModal from "../components/profile/EditProfileModal";
+import CreatePostModal from "../components/profile/CreatePostModal";
+import { getMediaUrl } from "../util/media";
 
 import axiosInstance from "../util/axios.customize";
 import {
@@ -30,7 +36,45 @@ import {
   blockUserApi,
   createPostApi,
   sharePostApi,
+  deletePostApi,
+  pinPostApi,
+  unfriendUserApi,
 } from "../util/api";
+
+const renderPostContent = (text = "") => {
+  if (!text) return "";
+  
+  // Matches @[Display Name](emailPrefix)
+  const regex = /@\[([^\]]+)\]\(([^)]+)\)/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  
+  while ((match = regex.exec(text)) !== null) {
+    const matchIndex = match.index;
+    if (matchIndex > lastIndex) {
+      parts.push(text.substring(lastIndex, matchIndex));
+    }
+    
+    const displayName = match[1];
+    parts.push(
+      <span 
+        key={matchIndex} 
+        className="text-blue-600 font-bold hover:underline cursor-pointer"
+        style={{ color: "#1890ff", fontWeight: "bold" }}
+      >
+        {displayName}
+      </span>
+    );
+    lastIndex = regex.lastIndex;
+  }
+  
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  
+  return parts.length > 0 ? parts : text;
+};
 
 const UserProfilePage = () => {
   const { userId } = useParams();
@@ -51,6 +95,7 @@ const UserProfilePage = () => {
   // Local state for Post Detail Modal
   const [selectedPost, setSelectedPost] = useState(null);
   const [detailVisible, setDetailVisible] = useState(false);
+  const [postToEdit, setPostToEdit] = useState(null);
 
   const {
     profileUser,
@@ -203,6 +248,50 @@ const UserProfilePage = () => {
     }
   };
 
+  const handleUnfriendClick = async () => {
+    try {
+      const res = await unfriendUserApi(userId);
+      if (res?.EC === 0) {
+        message.success(res?.EM || "Đã hủy kết bạn");
+        dispatch(fetchUserProfile(userId));
+        dispatch(fetchUserFriends({ userId }));
+        loadRelationships();
+      } else {
+        message.error(res?.EM || "Thất bại");
+      }
+    } catch (err) {
+      message.error("Lỗi hủy kết bạn/hủy yêu cầu");
+    }
+  };
+
+  const handleRejectFriendClick = async () => {
+    try {
+      const req = incomingRequests.find((r) => r.user?._id === userId);
+      let requestId = req?._id;
+      if (!requestId) {
+        const relationshipsRes = await axiosInstance.get("/v1/api/relationships");
+        const matchReq = relationshipsRes.data?.incomingRequests?.find(
+          (r) => r.user?._id === userId
+        );
+        requestId = matchReq?._id;
+      }
+      if (requestId) {
+        const res = await respondFriendRequestApi(requestId, "reject");
+        if (res?.EC === 0) {
+          message.success("Đã từ chối lời mời kết bạn");
+          dispatch(fetchUserProfile(userId));
+          loadRelationships();
+        } else {
+          message.error(res?.EM || "Thất bại");
+        }
+      } else {
+        message.error("Không tìm thấy yêu cầu kết bạn tương ứng");
+      }
+    } catch (err) {
+      message.error("Lỗi từ chối kết bạn");
+    }
+  };
+
   const handleBlockClick = async () => {
     Modal.confirm({
       title: "Chặn người dùng này?",
@@ -228,9 +317,15 @@ const UserProfilePage = () => {
   const handleFriendsListAction = async (id, actionType) => {
     try {
       if (actionType === "unfriend") {
-        message.info(
-          "Tính năng hủy kết bạn trực tiếp chưa hỗ trợ, vui lòng dùng nút Chặn để hủy liên kết!"
-        );
+        const res = await unfriendUserApi(id);
+        if (res?.EC === 0) {
+          message.success("Đã hủy kết bạn thành công!");
+          loadRelationships();
+          dispatch(fetchUserProfile(userId));
+          dispatch(fetchUserFriends({ userId }));
+        } else {
+          message.error(res?.EM || "Thất bại");
+        }
         return;
       }
       if (actionType === "unfollow") {
@@ -327,6 +422,46 @@ const UserProfilePage = () => {
     setDetailVisible(true);
   };
 
+  const handlePinPost = async (post) => {
+    try {
+      const res = await pinPostApi(post._id);
+      if (res?.EC === 0) {
+        message.success(res?.EM);
+        dispatch(togglePinInSlice(post._id));
+        setSelectedPost((prev) => prev ? { ...prev, isPinned: !prev.isPinned } : null);
+      } else {
+        message.error(res?.EM || "Thất bại");
+      }
+    } catch (err) {
+      message.error("Lỗi thao tác ghim");
+    }
+  };
+
+  const handleDeletePost = (post) => {
+    Modal.confirm({
+      title: "Xóa bài viết",
+      content: "Bạn có chắc chắn muốn xóa bài viết này không? Hành động này không thể hoàn tác.",
+      okText: "Xóa",
+      okType: "danger",
+      cancelText: "Hủy",
+      onOk: async () => {
+        try {
+          const res = await deletePostApi(post._id);
+          if (res?.EC === 0) {
+            message.success("Xóa bài viết thành công");
+            dispatch(deletePostInSlice(post._id));
+            setDetailVisible(false);
+            setSelectedPost(null);
+          } else {
+            message.error(res?.EM || "Thất bại");
+          }
+        } catch (err) {
+          message.error("Lỗi thao tác xóa");
+        }
+      },
+    });
+  };
+
   if (loading && !profileUser) {
     return (
       <div style={{ textAlign: "center", padding: "80px 20px" }}>
@@ -357,8 +492,9 @@ const UserProfilePage = () => {
         pendingRequestsCount={incomingRequests.length}
         onIncomingRequestsClick={() => {
           dispatch(setActiveTab("friends"));
-          // Direct element click or state transition handled internally in FriendsList
         }}
+        onUnfriendClick={handleUnfriendClick}
+        onRejectFriendClick={handleRejectFriendClick}
       />
 
       {/* Edit Profile Modal Dialog */}
@@ -416,89 +552,125 @@ const UserProfilePage = () => {
       </div>
 
       {/* Create New Post Modal Dialog */}
-      <Modal
-        title="Tạo bài viết mới"
+      {/* Create New Post Modal Dialog */}
+      <CreatePostModal
         open={createPostVisible}
-        onCancel={() => setCreatePostVisible(false)}
-        footer={null}
-        width={560}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "16px" }}>
-          <Input.TextArea
-            rows={4}
-            value={postContent}
-            onChange={(e) => setPostContent(e.target.value)}
-            placeholder="Bạn đang nghĩ gì thế?..."
-            style={{ borderRadius: "12px" }}
-          />
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <Select
-              value={postVisibility}
-              onChange={setPostVisibility}
-              style={{ width: 148 }}
-              options={[
-                { value: "public", label: "Công khai" },
-                { value: "friends", label: "Bạn bè" },
-              ]}
-              suffixIcon={<GlobalOutlined />}
-            />
-            <Space>
-              <Button onClick={() => setCreatePostVisible(false)} style={{ borderRadius: "10px" }}>
-                Hủy
-              </Button>
-              <Button
-                type="primary"
-                onClick={handleCreatePost}
-                loading={createPostLoading}
-                disabled={!postContent.trim()}
-                style={{
-                  backgroundColor: "#7F00FD",
-                  borderColor: "#7F00FD",
-                  borderRadius: "10px",
-                  fontWeight: 600,
-                }}
-              >
-                Đăng bài
-              </Button>
-            </Space>
-          </div>
-        </div>
-      </Modal>
+        onCancel={() => {
+          setCreatePostVisible(false);
+          setPostToEdit(null);
+        }}
+        onSuccess={(updatedPost) => {
+          if (postToEdit) {
+            dispatch(updatePostInSlice(updatedPost));
+          } else {
+            dispatch(addCreatedPost(updatedPost));
+          }
+          dispatch(fetchUserProfile(userId));
+        }}
+        currentUser={currentUser}
+        postToEdit={postToEdit}
+      />
 
       {/* Post Detail Viewer Modal Dialog */}
       <Modal
-        title="Chi tiết bài viết"
+        title={
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span>Chi tiết bài viết</span>
+            {selectedPost?.visibility === "friends" && (
+              <Tag icon={<TeamOutlined />} color="blue">Bạn bè</Tag>
+            )}
+            {selectedPost?.visibility === "private" && (
+              <Tag icon={<LockOutlined />} color="red">Chỉ mình tôi</Tag>
+            )}
+            {selectedPost?.visibility === "public" && (
+              <Tag icon={<GlobalOutlined />} color="green">Công khai</Tag>
+            )}
+            {selectedPost?.isPinned && (
+              <Tag icon={<PushpinOutlined />} color="purple">Đã ghim</Tag>
+            )}
+          </div>
+        }
         open={detailVisible}
         onCancel={() => {
           setDetailVisible(false);
           setSelectedPost(null);
         }}
-        footer={[
-          <Button
-            key="close"
-            onClick={() => {
-              setDetailVisible(false);
-              setSelectedPost(null);
-            }}
-            style={{ borderRadius: "10px" }}
-          >
-            Đóng
-          </Button>,
-        ]}
+        footer={
+          selectedPost && (isOwnProfile || selectedPost.author?._id === currentUser?._id) ? [
+            <Button
+              key="pin"
+              icon={<PushpinOutlined />}
+              onClick={() => handlePinPost(selectedPost)}
+              style={{ borderRadius: "10px" }}
+            >
+              {selectedPost.isPinned ? "Bỏ ghim" : "Ghim"}
+            </Button>,
+            <Button
+              key="edit"
+              icon={<EditOutlined />}
+              onClick={() => {
+                setPostToEdit(selectedPost);
+                setCreatePostVisible(true);
+                setDetailVisible(false);
+              }}
+              style={{ borderRadius: "10px" }}
+            >
+              Chỉnh sửa
+            </Button>,
+            <Button
+              key="delete"
+              icon={<DeleteOutlined />}
+              danger
+              onClick={() => handleDeletePost(selectedPost)}
+              style={{ borderRadius: "10px" }}
+            >
+              Xóa
+            </Button>,
+            <Button
+              key="close"
+              onClick={() => {
+                setDetailVisible(false);
+                setSelectedPost(null);
+              }}
+              style={{ borderRadius: "10px" }}
+            >
+              Đóng
+            </Button>,
+          ] : [
+            <Button
+              key="close"
+              onClick={() => {
+                setDetailVisible(false);
+                setSelectedPost(null);
+              }}
+              style={{ borderRadius: "10px" }}
+            >
+              Đóng
+            </Button>,
+          ]
+        }
         width={600}
       >
         {selectedPost && (
           <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "12px 0" }}>
             <div style={{ fontSize: "16px", color: "#1a1a1a", whiteSpace: "pre-wrap" }}>
-              {selectedPost.content}
+              {renderPostContent(selectedPost.content)}
             </div>
             {selectedPost.media && selectedPost.media.length > 0 && (
               <div style={{ borderRadius: "12px", overflow: "hidden", border: "1px solid #edf0f4" }}>
-                <img
-                  src={getMediaUrl(selectedPost.media[0])}
-                  alt="Post media"
-                  style={{ width: "100%", maxHeight: "400px", objectFit: "contain", backgroundColor: "#f8f9fa" }}
-                />
+                {selectedPost.media[0].includes("#type=video") || selectedPost.media[0].endsWith(".mp4") || selectedPost.media[0].endsWith(".mov") || selectedPost.media[0].includes("/video/") ? (
+                  <video
+                    src={getMediaUrl(selectedPost.media[0])}
+                    controls
+                    style={{ width: "100%", maxHeight: "400px", objectFit: "contain", backgroundColor: "#f8f9fa" }}
+                  />
+                ) : (
+                  <img
+                    src={getMediaUrl(selectedPost.media[0])}
+                    alt="Post media"
+                    style={{ width: "100%", maxHeight: "400px", objectFit: "contain", backgroundColor: "#f8f9fa" }}
+                  />
+                )}
               </div>
             )}
             <div

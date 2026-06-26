@@ -1,4 +1,4 @@
-import { Avatar, Button, Space, message, Badge } from "antd";
+import { Avatar, Button, Space, message, Badge, Dropdown } from "antd";
 import {
   CheckCircleFilled,
   EditOutlined,
@@ -10,6 +10,7 @@ import {
   CheckOutlined,
   CameraOutlined,
   ClockCircleOutlined,
+  CaretDownOutlined,
 } from "@ant-design/icons";
 import { getMediaUrl } from "../../util/media";
 import "../../styles/user-profile.css";
@@ -24,6 +25,8 @@ const ProfileHeader = ({
   isOwnProfile,
   pendingRequestsCount = 0,
   onIncomingRequestsClick,
+  onUnfriendClick,
+  onRejectFriendClick,
 }) => {
   if (!profile) return null;
 
@@ -109,7 +112,7 @@ const ProfileHeader = ({
             )}
           </div>
 
-          <div className="profile-actions-wrapper">
+          <div className="profile-actions-wrapper" style={{ flexWrap: "nowrap", overflow: "visible" }}>
             {isOwnProfile ? (
               <>
                 {pendingRequestsCount > 0 && (
@@ -153,46 +156,88 @@ const ProfileHeader = ({
                   </Button>
                 )}
 
-                {/* Friend request buttons */}
-                {profile.isFriend ? (
-                  <Button
-                    className="btn-purple-outline"
-                    icon={<CheckOutlined />}
-                  >
-                    Bạn bè
-                  </Button>
-                ) : profile.hasPendingRequest ? (
-                  <Button
-                    className="btn-action-gray"
-                    style={{ width: "auto", padding: "0 16px" }}
-                    icon={<ClockCircleOutlined />}
-                  >
-                    Đã gửi
-                  </Button>
-                ) : profile.hasIncomingRequest ? (
-                  <Button
-                    type="primary"
-                    className="btn-card-accept"
-                    style={{ borderRadius: "12px", height: "auto", padding: "6px 16px", fontWeight: 600 }}
-                    icon={<UserAddOutlined />}
-                    onClick={onAcceptFriendClick}
-                  >
-                    Chấp nhận
-                  </Button>
-                ) : (
-                  <Button
-                    type="primary"
-                    className="btn-purple"
-                    icon={<UserAddOutlined />}
-                    onClick={onAddFriendClick}
-                  >
-                    Kết bạn
-                  </Button>
-                )}
+                {/* Friend request dropdown menu definitions */}
+                {(() => {
+                  const friendMenuItems = {
+                    items: [
+                      {
+                        key: "unfriend",
+                        icon: <UserDeleteOutlined />,
+                        label: "Hủy kết bạn",
+                        danger: true,
+                        onClick: onUnfriendClick,
+                      }
+                    ]
+                  };
+
+                  const requestSentMenuItems = {
+                    items: [
+                      {
+                        key: "cancel_request",
+                        icon: <UserDeleteOutlined />,
+                        label: "Hủy lời mời",
+                        danger: true,
+                        onClick: onUnfriendClick,
+                      }
+                    ]
+                  };
+
+                  return (
+                    <>
+                      {profile.isFriend ? (
+                        <Dropdown menu={friendMenuItems} trigger={["click"]}>
+                          <Button
+                            className="btn-purple-outline"
+                            icon={<CheckOutlined />}
+                          >
+                            Bạn bè <CaretDownOutlined style={{ fontSize: "10px" }} />
+                          </Button>
+                        </Dropdown>
+                      ) : profile.hasPendingRequest ? (
+                        <Dropdown menu={requestSentMenuItems} trigger={["click"]}>
+                          <Button
+                            className="btn-action-gray"
+                            icon={<ClockCircleOutlined />}
+                          >
+                            Đã gửi <CaretDownOutlined style={{ fontSize: "10px" }} />
+                          </Button>
+                        </Dropdown>
+                      ) : profile.hasIncomingRequest ? (
+                        <Space size={8}>
+                          <Button
+                            type="primary"
+                            className="btn-card-accept"
+                            style={{ borderRadius: "12px", height: "auto", padding: "6px 16px", fontWeight: 600 }}
+                            icon={<UserAddOutlined />}
+                            onClick={onAcceptFriendClick}
+                          >
+                            Chấp nhận
+                          </Button>
+                          <Button
+                            className="btn-action-gray"
+                            icon={<UserDeleteOutlined />}
+                            onClick={onRejectFriendClick}
+                          >
+                            Từ chối
+                          </Button>
+                        </Space>
+                      ) : (
+                        <Button
+                          type="primary"
+                          className="btn-purple"
+                          icon={<UserAddOutlined />}
+                          onClick={onAddFriendClick}
+                        >
+                          Kết bạn
+                        </Button>
+                      )}
+                    </>
+                  );
+                })()}
 
                 {/* Block Button */}
                 <Button
-                  className="btn-action-gray"
+                  className="btn-icon-only"
                   danger
                   icon={<StopOutlined />}
                   onClick={onBlockClick}
@@ -202,7 +247,7 @@ const ProfileHeader = ({
             )}
 
             <Button
-              className="btn-action-gray"
+              className="btn-icon-only"
               icon={<ShareAltOutlined />}
               onClick={handleShare}
             />

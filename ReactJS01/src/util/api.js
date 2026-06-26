@@ -12,6 +12,14 @@ const getAccountApi = () => axios.get("/v1/api/account");
 const forgotPasswordApi = (email) => axios.post("/v1/api/forgot-password", { email });
 
 const createPostApi = (payload) => axios.post("/v1/api/posts", payload);
+const updatePostApi = (postId, payload) => axios.put(`/v1/api/posts/${postId}`, payload);
+const deletePostApi = (postId) => axios.delete(`/v1/api/posts/${postId}`);
+const pinPostApi = (postId) => axios.post(`/v1/api/posts/${postId}/pin`);
+const uploadPostMediaApi = (formData) => axios.post("/v1/api/posts/upload-media", formData, {
+  headers: {
+    "Content-Type": "multipart/form-data",
+  },
+});
 
 const getFeedApi = ({ mode = "latest", page = 1, limit = 10 }) =>
   axios.get("/v1/api/feed", { params: { mode, page, limit } });
@@ -35,6 +43,7 @@ const followUserApi = (userId) => axios.post(`/v1/api/users/${userId}/follow`);
 const unfollowUserApi = (userId) => axios.delete(`/v1/api/users/${userId}/follow`);
 
 const friendRequestApi = (userId) => axios.post(`/v1/api/users/${userId}/friend-request`);
+const unfriendUserApi = (userId) => axios.delete(`/v1/api/users/${userId}/friend`);
 
 const respondFriendRequestApi = (requestId, action) =>
   axios.post(`/v1/api/friend-requests/${requestId}/respond`, { action });
@@ -47,12 +56,17 @@ const unblockUserApi = (userId) => axios.delete(`/v1/api/users/${userId}/block`)
 
 const reportUserApi = (userId, reason) => axios.post(`/v1/api/users/${userId}/report`, { reason });
 
-const getNotificationsApi = () => axios.get("/v1/api/notifications");
+const getNotificationsApi = (params = {}) => axios.get("/v1/api/notifications", { params });
 
 const markNotificationReadApi = (notificationId) =>
   axios.patch(`/v1/api/notifications/${notificationId}/read`);
 
 const markAllNotificationsReadApi = () => axios.patch("/v1/api/notifications/read-all");
+const getPushPublicKeyApi = () => axios.get("/v1/api/notifications/push-public-key");
+const subscribePushApi = (subscription) =>
+  axios.post("/v1/api/notifications/push-subscriptions", { subscription });
+const unsubscribePushApi = (endpoint) =>
+  axios.delete("/v1/api/notifications/push-subscriptions", { data: { endpoint } });
 
 const getTrendingApi = () => axios.get("/v1/api/trending");
 
@@ -76,6 +90,9 @@ export {
   blockUserApi,
   commentPostApi,
   createPostApi,
+  updatePostApi,
+  deletePostApi,
+  pinPostApi,
   createUserApi,
   followUserApi,
   forgotPasswordApi,
@@ -83,6 +100,7 @@ export {
   getAccountApi,
   getFeedApi,
   getNotificationsApi,
+  getPushPublicKeyApi,
   getPostByIdApi,
   getRelationshipsApi,
   getTrendingApi,
@@ -90,6 +108,8 @@ export {
   loginApi,
   markAllNotificationsReadApi,
   markNotificationReadApi,
+  subscribePushApi,
+  unsubscribePushApi,
   reactPostApi,
   replyCommentApi,
   reportPostApi,
@@ -105,4 +125,6 @@ export {
   sendMessageApi,
   recallMessageApi,
   markSeenApi,
+  uploadPostMediaApi,
+  unfriendUserApi,
 };

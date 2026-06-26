@@ -196,20 +196,44 @@
   border-color: #e28f0d !important;
 }
 
+/* Text+icon gray button (e.g. "Đã gửi", "Bạn bè" with dropdown) */
 .btn-action-gray {
+  background-color: #f0f2f5 !important;
+  border: 1px solid #e4e6eb !important;
+  color: #1c1e21 !important;
+  border-radius: 12px !important;
+  height: 38px !important;
+  padding: 0 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+}
+
+.btn-action-gray:hover {
+  background-color: #e4e6eb !important;
+}
+
+/* Icon-only square gray button (block, share, …) */
+.btn-icon-only {
   background-color: #f0f2f5 !important;
   border: 1px solid #e4e6eb !important;
   color: #1c1e21 !important;
   border-radius: 12px !important;
   width: 40px !important;
   height: 40px !important;
+  min-width: 40px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   padding: 0 !important;
+  flex-shrink: 0 !important;
 }
 
-.btn-action-gray:hover {
+.btn-icon-only:hover {
   background-color: #e4e6eb !important;
 }
 

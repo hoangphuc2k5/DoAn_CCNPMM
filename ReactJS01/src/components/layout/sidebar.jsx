@@ -12,15 +12,28 @@ import {
   TeamOutlined,
   SettingOutlined,
   LogoutOutlined,
+  LikeFilled,
+  CommentOutlined,
+  RetweetOutlined,
+  PushpinOutlined,
+  CheckCircleOutlined,
 } from "@ant-design/icons";
 import { logout } from "../../Redux/authSlice";
 import { getMediaUrl } from "../../util/media";
 import {
   getNotificationsApi,
+  getPushPublicKeyApi,
   markAllNotificationsReadApi,
   markNotificationReadApi,
   searchApi,
+  subscribePushApi,
 } from "../../util/api";
+import { useSocket } from "../context/socket.context";
+import {
+  enableBrowserPush,
+  getNotificationTargetUrl,
+  showLocalNotification,
+} from "../../util/notification";
 
 const notificationText = {
   post_mention: "đã nhắc đến bạn trong một bài viết",
@@ -41,6 +54,7 @@ const Sidebar = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { isAuthenticated, user } = useSelector((state) => state.auth);
+  const { socket } = useSocket();
   
   // States
   const [searchOpen, setSearchOpen] = useState(false);
@@ -51,6 +65,7 @@ const Sidebar = () => {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [pushLoading, setPushLoading] = useState(false);
 
   // Search Autocomplete Suggestion Logic
   useEffect(() => {
@@ -194,24 +209,53 @@ const Sidebar = () => {
     return () => window.clearInterval(timer);
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    if (!socket) return undefined;
+
+    const handleNewNotification = ({ notification, unread }) => {
+      const enriched = {
+        ...notification,
+        text: notificationText[notification.type] || notification.type,
+      };
+      setNotifications((prev) => [
+        enriched,
+        ...prev.filter((item) => item._id !== enriched._id),
+      ]);
+      setUnreadCount(unread || 0);
+      showLocalNotification(enriched);
+    };
+
+    socket.on("notification:new", handleNewNotification);
+    return () => socket.off("notification:new", handleNewNotification);
+  }, [socket]);
+
   const handleReadNotification = async (item) => {
     try {
       await markNotificationReadApi(item._id);
-      await refreshNotifications();
+      setNotifications((prev) =>
+        prev.map((notification) =>
+          notification._id === item._id
+            ? { ...notification, readAt: notification.readAt || new Date().toISOString() }
+            : notification,
+        ),
+      );
+      setUnreadCount((prev) => Math.max(prev - (item.readAt ? 0 : 1), 0));
     } catch (err) {
       console.error(err);
     }
     setNotificationOpen(false);
-    const postId = item.post?._id || item.post;
-    
-    if (postId) {
-      navigate("/");
-    } else if (item.type === "new_message") {
-      navigate("/chat");
-    } else if (item.type === "friend_request" || item.type === "friend_accept" || item.type === "follow") {
-      navigate(`/profile/${item.actor?._id || ""}`);
-    } else {
-      navigate("/");
+    navigate(getNotificationTargetUrl(item));
+  };
+
+  const handleEnablePush = async () => {
+    try {
+      setPushLoading(true);
+      const res = await enableBrowserPush({ getPushPublicKeyApi, subscribePushApi });
+      message.success(res?.EM || "Đã bật push notification");
+    } catch (err) {
+      message.warning(err.message || "Không thể bật push notification");
+    } finally {
+      setPushLoading(false);
     }
   };
 
@@ -241,6 +285,7 @@ const Sidebar = () => {
     const path = location.pathname;
     if (path === "/" || path === "") return "home";
     if (path.startsWith("/search")) return "search";
+    if (path.startsWith("/notifications")) return "notifications";
     if (path.startsWith("/chat")) return "chat";
     if (path.startsWith("/profile") || path.startsWith("/friends") || path.startsWith("/user")) return "profile";
     return "";
@@ -281,16 +326,16 @@ const Sidebar = () => {
             {isAuthenticated && (
               <>
                 {/* Thông báo */}
-                <button
-                  onClick={() => setNotificationOpen(true)}
-                  className="sidebar-item"
+                <Link
+                  to="/notifications"
+                  className={`sidebar-item ${activeKey === "notifications" ? "active" : ""}`}
                   style={{ position: "relative" }}
                 >
                   <Badge count={unreadCount} size="small" offset={[5, -5]} color="#FF3B30">
                     <BellOutlined style={{ fontSize: 20 }} />
                   </Badge>
                   <span>Thông báo</span>
-                </button>
+                </Link>
 
                 {/* Tin nhắn */}
                 <Link
@@ -417,9 +462,14 @@ const Sidebar = () => {
         onClose={() => setNotificationOpen(false)}
         width={380}
         extra={
-          <Button type="text" onClick={handleMarkAllRead} style={{ color: "#7F00FD", fontWeight: 600 }}>
-            Đánh dấu đã đọc
-          </Button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button type="text" loading={pushLoading} onClick={handleEnablePush} style={{ color: "#7F00FD", fontWeight: 600 }}>
+              Bật push
+            </Button>
+            <Button type="text" onClick={handleMarkAllRead} style={{ color: "#7F00FD", fontWeight: 600 }}>
+              Đánh dấu đã đọc
+            </Button>
+          </div>
         }
       >
         <List

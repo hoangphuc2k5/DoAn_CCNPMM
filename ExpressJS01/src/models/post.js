@@ -14,7 +14,7 @@ const postSchema = new mongoose.Schema(
     },
     visibility: {
       type: String,
-      enum: ["public", "friends"],
+      enum: ["public", "friends", "private"],
       default: "public",
     },
     mentions: [
@@ -40,6 +40,10 @@ const postSchema = new mongoose.Schema(
         type: String,
       },
     ],
+    isPinned: {
+      type: Boolean,
+      default: false,
+    },
     stats: {
       reactions: { type: Number, default: 0 },
       comments: { type: Number, default: 0 },
