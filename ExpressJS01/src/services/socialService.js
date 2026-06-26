@@ -3,6 +3,7 @@ const Block = require("../models/block");
 const Comment = require("../models/comment");
 const Follow = require("../models/follow");
 const Friendship = require("../models/friendship");
+const HiddenItem = require("../models/hiddenItem");
 const Notification = require("../models/notification");
 const Post = require("../models/post");
 const Reaction = require("../models/reaction");
@@ -119,6 +120,7 @@ const notifyMentionedUsers = async ({ users, actor, type, post, comment }) => {
 
 const decoratePosts = async (posts, currentUserId) => {
   const postIds = posts.map((post) => post._id);
+  const hiddenCommentIds = (await getHiddenItemIds(currentUserId, "comment")).map(String);
   const comments = await Comment.find({ post: { $in: postIds }, deletedAt: null })
     .sort({ createdAt: 1 })
     .populate("author", "name email avatar")
@@ -127,7 +129,11 @@ const decoratePosts = async (posts, currentUserId) => {
 
   return posts.map((post) => {
     const postObject = post.toObject ? post.toObject() : post;
-    const postComments = comments.filter((comment) => String(comment.post) === String(post._id));
+    const postComments = comments.filter(
+      (comment) =>
+        String(comment.post) === String(post._id) &&
+        !hiddenCommentIds.includes(String(comment._id)),
+    );
     const topComments = postComments
       .filter((comment) => !comment.parentComment)
       .map((comment) => ({
@@ -184,6 +190,9 @@ const getBlockedUserIds = async (userId) => {
   );
 };
 
+const getHiddenItemIds = async (userId, targetType) =>
+  HiddenItem.find({ user: userId, targetType }).distinct("targetId");
+
 const createPost = async (userId, payload, files = []) => {
   const content = payload.content?.trim() || (files.length ? " " : "");
   if (!content) return { EC: 1, EM: "Nội dung bài viết không được rỗng" };
@@ -217,8 +226,10 @@ const getFeed = async (userId, query) => {
   const limit = Math.min(Math.max(Number(query.limit || 10), 1), 30);
   const mode = query.mode || "latest";
   const blockedUserIds = await getBlockedUserIds(userId);
+  const hiddenPostIds = await getHiddenItemIds(userId, "post");
 
   const filter = {
+    _id: { $nin: hiddenPostIds },
     author: { $nin: blockedUserIds.map(toObjectId) },
     group: null,
     $or: [{ visibility: "public" }, { author: userId }],
@@ -273,8 +284,9 @@ const getFeed = async (userId, query) => {
 
 const getPostById = async (userId, postId) => {
   const blockedUserIds = await getBlockedUserIds(userId);
+  const hiddenPostIds = await getHiddenItemIds(userId, "post");
   const post = await Post.findOne({
-    _id: postId,
+    _id: { $nin: hiddenPostIds, $eq: postId },
     author: { $nin: blockedUserIds.map(toObjectId) },
   })
     .populate("author", "name email avatar")
@@ -436,6 +448,42 @@ const deletePost = async (userId, postId) => {
   ]);
 
   return { EC: 0, EM: "Da xoa bai viet" };
+};
+
+const hideTarget = async ({ userId, targetType, targetId }) => {
+  if (!["post", "comment"].includes(targetType)) {
+    return { EC: 1, EM: "Loai noi dung khong hop le" };
+  }
+
+  if (targetType === "post") {
+    const post = await Post.findById(targetId);
+    if (!post) return { EC: 2, EM: "Khong tim thay bai viet" };
+    if (isSameId(post.author, userId)) return { EC: 3, EM: "Khong the an bai viet cua minh" };
+
+    const access = await canViewPost(post, userId);
+    if (!access.allowed) return { EC: 4, EM: "Ban khong co quyen xem bai viet nay" };
+  }
+
+  if (targetType === "comment") {
+    const comment = await Comment.findById(targetId);
+    if (!comment || comment.deletedAt) return { EC: 5, EM: "Khong tim thay binh luan" };
+    if (isSameId(comment.author, userId)) {
+      return { EC: 6, EM: "Khong the an binh luan cua minh" };
+    }
+
+    const post = await Post.findById(comment.post);
+    if (!post) return { EC: 7, EM: "Khong tim thay bai viet" };
+    const access = await canViewPost(post, userId);
+    if (!access.allowed) return { EC: 8, EM: "Ban khong co quyen xem binh luan nay" };
+  }
+
+  const hiddenItem = await HiddenItem.findOneAndUpdate(
+    { user: userId, targetType, targetId },
+    { user: userId, targetType, targetId },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+
+  return { EC: 0, EM: "Da an noi dung", data: hiddenItem };
 };
 
 const updatePost = async (userId, postId, payload = {}) => {
@@ -762,10 +810,12 @@ module.exports = {
   deletePost,
   followUser,
   getFeed,
+  getHiddenItemIds,
   getNotifications,
   getPostById,
   getRelationships,
   getTrendingTopics,
+  hideTarget,
   markAllNotificationsRead,
   markNotificationRead,
   reactPost,

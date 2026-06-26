@@ -22,6 +22,8 @@ const updatePostApi = (postId, payload) => axios.patch(`/v1/api/posts/${postId}`
 
 const deletePostApi = (postId) => axios.delete(`/v1/api/posts/${postId}`);
 
+const hidePostApi = (postId) => axios.post(`/v1/api/posts/${postId}/hide`);
+
 const reactPostApi = (postId, type) => axios.post(`/v1/api/posts/${postId}/react`, { type });
 
 const commentPostApi = (postId, content) =>
@@ -31,6 +33,8 @@ const replyCommentApi = (commentId, postId, content) =>
   axios.post(`/v1/api/comments/${commentId}/replies`, { postId, content });
 
 const deleteCommentApi = (commentId) => axios.delete(`/v1/api/comments/${commentId}`);
+
+const hideCommentApi = (commentId) => axios.post(`/v1/api/comments/${commentId}/hide`);
 
 const sharePostApi = (postId, content) => axios.post(`/v1/api/posts/${postId}/share`, { content });
 
@@ -166,6 +170,8 @@ export {
   getRelationshipsApi,
   getTrendingApi,
   getUserApi,
+  hideCommentApi,
+  hidePostApi,
   loginApi,
   attendGroupEventApi,
   createGroupApi,

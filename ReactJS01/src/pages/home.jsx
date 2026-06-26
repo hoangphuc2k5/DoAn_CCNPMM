@@ -49,6 +49,8 @@ import {
   followUserApi,
   friendRequestApi,
   getFeedApi,
+  hideCommentApi,
+  hidePostApi,
   getNotificationsApi,
   getPostByIdApi,
   getTrendingApi,
@@ -63,6 +65,7 @@ import {
   updatePostApi,
 } from "../util/api";
 import { getMediaUrl } from "../util/media";
+import CreatePostComposer from "../components/post/CreatePostComposer";
 import PostCommentsModal from "../components/post/PostCommentsModal";
 
 const reactionOptions = [
@@ -114,6 +117,7 @@ const HomePage = () => {
   const [postContent, setPostContent] = useState("");
   const [postMediaFiles, setPostMediaFiles] = useState([]);
   const [visibility, setVisibility] = useState("public");
+  const [composeOpen, setComposeOpen] = useState(false);
   const [commentDrafts, setCommentDrafts] = useState({});
   const [replyDrafts, setReplyDrafts] = useState({});
   const [trending, setTrending] = useState([]);
@@ -194,6 +198,18 @@ const HomePage = () => {
     );
   };
 
+  const removeCommentFromPost = (postId, commentId) => {
+    updatePost(postId, (post) => ({
+      ...post,
+      comments: (post.comments || [])
+        .filter((comment) => comment._id !== commentId)
+        .map((comment) => ({
+          ...comment,
+          replies: (comment.replies || []).filter((reply) => reply._id !== commentId),
+        })),
+    }));
+  };
+
   const handleCreatePost = async () => {
     const formData = new FormData();
     formData.append("content", postContent);
@@ -206,6 +222,7 @@ const HomePage = () => {
     if (res?.EC === 0) {
       setPostContent("");
       setPostMediaFiles([]);
+      setComposeOpen(false);
       message.success("Đã đăng bài");
       await loadFeed({ nextPage: 1 });
       await loadTrending();
@@ -453,7 +470,13 @@ const HomePage = () => {
         });
       }
       if (key === "hide") {
-        setHiddenPostIds((prev) => (prev.includes(post._id) ? prev : [...prev, post._id]));
+        const res = await hidePostApi(post._id);
+        if (res?.EC === 0) {
+          setHiddenPostIds((prev) => (prev.includes(post._id) ? prev : [...prev, post._id]));
+          message.success(res.EM || "Đã ẩn bài viết");
+        } else {
+          message.error(res?.EM || "Không thể ẩn bài viết");
+        }
       }
       if (key === "follow") {
         await followUserApi(post.author._id);
@@ -616,7 +639,28 @@ const HomePage = () => {
       </aside>
 
       <main className="social-feed">
-        <Card className="composer-card">
+        <CreatePostComposer
+          avatar={userProfile?.avatar || user?.avatar}
+          content={postContent}
+          files={postMediaFiles}
+          modalPlaceholder="Tạo bài viết công khai..."
+          name={displayName}
+          onContentChange={setPostContent}
+          onFilesChange={(fileList) => setPostMediaFiles(fileList)}
+          onOpenChange={setComposeOpen}
+          onRemoveFile={removeMediaFile}
+          onSubmit={handleCreatePost}
+          open={composeOpen}
+          triggerPlaceholder="Bạn viết gì đi..."
+          visibilityOptions={[
+            { value: "public", label: "Công khai" },
+            { value: "friends", label: "Bạn bè" },
+          ]}
+          visibilityValue={visibility}
+          onVisibilityChange={setVisibility}
+        />
+
+        <Card className="composer-card composer-card-collapsed legacy-composer-hidden">
           <div className="composer-head">
             <Avatar
               size={44}
@@ -628,7 +672,10 @@ const HomePage = () => {
 
             <Input
               className="composer-pill"
-              value={postContent}
+              readOnly
+              onClick={() => setComposeOpen(true)}
+              onFocus={() => setComposeOpen(true)}
+              value=""
               onChange={(event) => setPostContent(event.target.value)}
               placeholder={`${displayName}, bạn đang nghĩ gì?`}
               onPressEnter={handleCreatePost}
@@ -691,6 +738,87 @@ const HomePage = () => {
             </Button>
           </div>
         </Card>
+
+        <Modal
+          className="create-post-modal"
+          title={<div className="create-post-title">Tạo bài viết</div>}
+          open={false}
+          onCancel={() => setComposeOpen(false)}
+          footer={null}
+          width={620}
+          centered
+        >
+          <div className="create-post-author">
+            <Avatar
+              size={48}
+              src={getMediaUrl(userProfile?.avatar)}
+              icon={<UserOutlined />}
+            >
+              {displayName[0]}
+            </Avatar>
+            <div>
+              <strong>{displayName}</strong>
+              <Select
+                value={visibility}
+                onChange={setVisibility}
+                suffixIcon={<GlobalOutlined />}
+                options={[
+                  { value: "public", label: "Công khai" },
+                  { value: "friends", label: "Bạn bè" },
+                ]}
+                size="small"
+                style={{ minWidth: 132 }}
+              />
+            </div>
+          </div>
+          <Input.TextArea
+            className="create-post-textarea"
+            autoFocus
+            autoSize={{ minRows: 7, maxRows: 12 }}
+            value={postContent}
+            onChange={(event) => setPostContent(event.target.value)}
+            placeholder="Tạo bài viết công khai..."
+          />
+          <div className="create-post-addons">
+            <strong>Thêm vào bài viết của bạn</strong>
+            <Upload
+              accept="image/*,video/*"
+              beforeUpload={() => false}
+              fileList={postMediaFiles}
+              multiple
+              onChange={handleMediaChange}
+              showUploadList={false}
+            >
+              <Button icon={<PictureOutlined />} shape="circle" type="text" />
+            </Upload>
+          </div>
+          {postMediaFiles.length ? (
+            <div className="composer-media-list create-post-file-list">
+              {postMediaFiles.map((file) => (
+                <Tag
+                  key={file.uid}
+                  closable
+                  closeIcon={<DeleteOutlined />}
+                  onClose={(event) => {
+                    event.preventDefault();
+                    removeMediaFile(file.uid);
+                  }}
+                >
+                  {file.name}
+                </Tag>
+              ))}
+            </div>
+          ) : null}
+          <Button
+            block
+            className="create-post-submit"
+            type="primary"
+            onClick={handleCreatePost}
+            disabled={!postContent.trim() && postMediaFiles.length === 0}
+          >
+            Đăng
+          </Button>
+        </Modal>
 
         <div className="feed-toolbar">
           <Radio.Group
@@ -922,6 +1050,15 @@ const HomePage = () => {
         onAuthorClick={(authorId) => authorId && navigate(`/profile/${authorId}`)}
         onReact={(post) => handleReact(post._id, "like")}
         onShare={(post) => handleShare(post._id)}
+        onHideComment={async (post, commentId) => {
+          const res = await hideCommentApi(commentId);
+          if (res?.EC === 0) {
+            removeCommentFromPost(post._id, commentId);
+            message.success(res.EM || "Đã ẩn bình luận");
+          } else {
+            message.error(res?.EM || "Không thể ẩn bình luận");
+          }
+        }}
         onReportComment={(post, comment) =>
           askReason("Báo cáo bình luận", async (reason) => {
             const res = await reportCommentApi(comment._id, reason);

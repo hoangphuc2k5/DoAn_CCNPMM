@@ -292,6 +292,184 @@ button {
   box-shadow: inset 0 0 0 1px rgba(24, 119, 242, 0.16);
 }
 
+.composer-card-collapsed .ant-card-body {
+  padding: 14px 16px;
+}
+
+.composer-card-collapsed .composer-textarea,
+.composer-card-collapsed .composer-media,
+.composer-card-collapsed .compact-divider,
+.composer-card-collapsed .composer-actions {
+  display: none;
+}
+
+.composer-card-collapsed .composer-pill {
+  cursor: pointer;
+  color: #65676b;
+  font-size: 16px;
+}
+
+.legacy-composer-hidden {
+  display: none !important;
+}
+
+.composer-trigger {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-trigger .ant-avatar {
+  flex: 0 0 auto;
+}
+
+.composer-trigger-text {
+  flex: 1;
+  min-height: 50px;
+  border-radius: 999px;
+  background: #f0f2f5;
+  color: #65676b;
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  font-size: 17px;
+  font-weight: 500;
+  transition: background 0.18s ease;
+}
+
+.composer-trigger:hover .composer-trigger-text {
+  background: #e4e6eb;
+}
+
+.create-post-modal .ant-modal-content {
+  border-radius: 12px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.create-post-modal .ant-modal-header {
+  margin: 0;
+  padding: 20px 56px 18px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: center;
+}
+
+.create-post-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: #111827;
+}
+
+.create-post-modal .ant-modal-close {
+  top: 14px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #e4e6eb;
+}
+
+.create-post-modal .ant-modal-body {
+  padding: 18px 20px 20px;
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
+}
+
+.create-post-author {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.create-post-author > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.create-post-author strong {
+  font-size: 16px;
+  color: #111827;
+}
+
+.create-post-textarea {
+  border: 0 !important;
+  box-shadow: none !important;
+  resize: none;
+  padding: 10px 0;
+  font-size: 24px;
+  line-height: 1.35;
+}
+
+.create-post-textarea textarea,
+.create-post-textarea::placeholder {
+  color: #65676b;
+}
+
+.create-post-addons {
+  min-height: 58px;
+  border: 1px solid #d9dde3;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  margin-top: 12px;
+}
+
+.create-post-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 8px 0 12px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.create-post-preview-grid .ant-image {
+  width: 100%;
+  height: 100%;
+}
+
+.create-post-preview,
+.create-post-preview-grid .ant-image-img {
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #0f172a;
+  display: block;
+}
+
+.create-post-addons strong {
+  font-size: 16px;
+  color: #111827;
+}
+
+.create-post-addons .ant-btn {
+  color: #22c55e;
+  font-size: 22px;
+}
+
+.create-post-file-list {
+  margin-top: 10px;
+}
+
+.create-post-submit {
+  height: 46px;
+  margin-top: 18px;
+  border-radius: 8px;
+  font-weight: 800;
+}
+
 .composer-textarea {
   margin-top: 12px;
   border-color: #e5e7eb;
@@ -901,6 +1079,15 @@ button {
 
 .tg-composer {
   padding: 16px;
+}
+
+.tg-composer-collapsed {
+  padding: 14px 16px;
+}
+
+.tg-composer-collapsed > .ant-input,
+.tg-composer-collapsed > .tg-composer-actions {
+  display: none;
 }
 
 .tg-composer .ant-input {

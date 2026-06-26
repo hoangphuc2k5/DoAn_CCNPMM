@@ -65,6 +65,7 @@ const PostCommentsModal = ({
   onAuthorClick,
   onReact,
   onShare,
+  onHideComment,
   onReportComment,
   shareDisabled = false,
   highlightedCommentId = "",
@@ -84,6 +85,10 @@ const PostCommentsModal = ({
   };
 
   const hideComment = (commentId) => {
+    if (onHideComment) {
+      onHideComment(post, commentId);
+      return;
+    }
     setHiddenCommentIds((prev) => (prev.includes(commentId) ? prev : [...prev, commentId]));
   };
 

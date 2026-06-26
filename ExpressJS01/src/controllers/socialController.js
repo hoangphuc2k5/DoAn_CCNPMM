@@ -65,6 +65,24 @@ const deletePost = async (req, res) => {
   return res.status(200).json(data);
 };
 
+const hidePost = async (req, res) => {
+  const data = await socialService.hideTarget({
+    userId: currentUserId(req),
+    targetType: "post",
+    targetId: req.params.postId,
+  });
+  return res.status(200).json(data);
+};
+
+const hideComment = async (req, res) => {
+  const data = await socialService.hideTarget({
+    userId: currentUserId(req),
+    targetType: "comment",
+    targetId: req.params.commentId,
+  });
+  return res.status(200).json(data);
+};
+
 const updatePost = async (req, res) => {
   const data = await socialService.updatePost(
     currentUserId(req),
@@ -194,6 +212,8 @@ module.exports = {
   getPostById,
   getRelationships,
   getTrendingTopics,
+  hideComment,
+  hidePost,
   markAllNotificationsRead,
   markNotificationRead,
   reactPost,

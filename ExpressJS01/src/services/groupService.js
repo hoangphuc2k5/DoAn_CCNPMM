@@ -4,7 +4,12 @@ const Comment = require("../models/comment");
 const Post = require("../models/post");
 const Report = require("../models/report");
 const { processPostMediaFiles } = require("./mediaService");
-const { decoratePosts } = require("./socialService");
+const {
+  decoratePosts,
+  deleteComment,
+  deletePost,
+  getHiddenItemIds,
+} = require("./socialService");
 
 const idOf = (value) => String(value?._id || value);
 
@@ -370,7 +375,8 @@ const getGroupPosts = async (userId, groupId, query = {}) => {
 
   const page = Math.max(Number(query.page || 1), 1);
   const limit = Math.min(Math.max(Number(query.limit || 10), 1), 30);
-  const postFilter = { group: groupId, ...publishedPostFilter };
+  const hiddenPostIds = await getHiddenItemIds(userId, "post");
+  const postFilter = { _id: { $nin: hiddenPostIds }, group: groupId, ...publishedPostFilter };
   if (!member) postFilter.visibility = "public";
 
   const posts = await Post.find(postFilter)
@@ -398,7 +404,9 @@ const getGroupMedia = async (userId, groupId, query = {}) => {
 
   const page = Math.max(Number(query.page || 1), 1);
   const limit = Math.min(Math.max(Number(query.limit || 24), 1), 60);
+  const hiddenPostIds = await getHiddenItemIds(userId, "post");
   const mediaFilter = {
+    _id: { $nin: hiddenPostIds },
     group: groupId,
     media: { $exists: true, $ne: [] },
     ...publishedPostFilter,
@@ -562,7 +570,7 @@ const resolveGroupReport = async (userId, groupId, reportId, action) => {
   if (!canModerate(group, userId)) {
     return { EC: 2, EM: "Chi admin/mod moi xu ly to cao" };
   }
-  if (!["reviewing", "resolved", "rejected"].includes(action)) {
+  if (!["reviewing", "resolved", "rejected", "delete_target"].includes(action)) {
     return { EC: 3, EM: "Trang thai xu ly khong hop le" };
   }
 
@@ -577,14 +585,30 @@ const resolveGroupReport = async (userId, groupId, reportId, action) => {
   });
   if (!report) return { EC: 4, EM: "Khong tim thay to cao trong nhom" };
 
-  report.status = action;
-  if (["resolved", "rejected"].includes(action)) {
+  if (action === "delete_target") {
+    const result =
+      report.targetType === "post"
+        ? await deletePost(userId, report.targetId)
+        : await deleteComment(userId, report.targetId);
+    if (result?.EC !== 0) {
+      return { EC: 5, EM: result?.EM || "Khong the xoa noi dung bi to cao" };
+    }
+    report.status = "resolved";
+  } else {
+    report.status = action;
+  }
+
+  if (["resolved", "rejected", "delete_target"].includes(action)) {
     report.resolvedBy = userId;
     report.resolvedAt = new Date();
   }
   await report.save();
 
-  return { EC: 0, EM: "Da cap nhat to cao", data: report };
+  return {
+    EC: 0,
+    EM: action === "delete_target" ? "Da xoa noi dung bi to cao" : "Da cap nhat to cao",
+    data: report,
+  };
 };
 
 const listEvents = async (userId, groupId) => {

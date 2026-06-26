@@ -60,6 +60,8 @@ import {
   getGroupPostsApi,
   getGroupReportsApi,
   getGroupsApi,
+  hideCommentApi,
+  hidePostApi,
   joinGroupApi,
   leaveGroupApi,
   leaveGroupEventApi,
@@ -80,6 +82,7 @@ import {
 } from "../util/api";
 import { getMediaUrl } from "../util/media";
 import { logout } from "../Redux/authSlice";
+import CreatePostComposer from "../components/post/CreatePostComposer";
 import PostCommentsModal from "../components/post/PostCommentsModal";
 
 const normalizeMedia = (media = []) =>
@@ -169,6 +172,7 @@ const GroupsPage = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [postComposerOpen, setPostComposerOpen] = useState(false);
   const [postContent, setPostContent] = useState("");
   const [postFiles, setPostFiles] = useState([]);
   const [postVisibility, setPostVisibility] = useState("group");
@@ -327,6 +331,18 @@ const GroupsPage = () => {
     setPosts((prev) => prev.map((post) => (post._id === postId ? updater(post) : post)));
   };
 
+  const removeCommentFromGroupPost = (postId, commentId) => {
+    updateGroupPost(postId, (post) => ({
+      ...post,
+      comments: (post.comments || [])
+        .filter((comment) => comment._id !== commentId)
+        .map((comment) => ({
+          ...comment,
+          replies: (comment.replies || []).filter((reply) => reply._id !== commentId),
+        })),
+    }));
+  };
+
   const handleCreateGroup = async () => {
     const values = await groupForm.validateFields();
     const res = await createGroupApi(values);
@@ -381,6 +397,7 @@ const GroupsPage = () => {
     if (res?.EC === 0) {
       setPostContent("");
       setPostFiles([]);
+      setPostComposerOpen(false);
       message.success("Đã đăng bài trong nhóm");
       await loadGroupDetail(selectedGroup._id);
     } else {
@@ -643,12 +660,18 @@ const GroupsPage = () => {
 
     return {
       items,
-      onClick: ({ key }) => {
+      onClick: async ({ key }) => {
         if (key === "edit") {
           handleEditGroupPost(post);
         }
         if (key === "hide") {
-          setHiddenPostIds((prev) => (prev.includes(post._id) ? prev : [...prev, post._id]));
+          const res = await hidePostApi(post._id);
+          if (res?.EC === 0) {
+            setHiddenPostIds((prev) => (prev.includes(post._id) ? prev : [...prev, post._id]));
+            message.success(res.EM || "Đã ẩn bài viết");
+          } else {
+            message.error(res?.EM || "Không thể ẩn bài viết");
+          }
         }
         if (key === "report") {
           handleReportPost(post);
@@ -696,7 +719,20 @@ const GroupsPage = () => {
   };
 
   const handleResolveReport = async (reportId, action) => {
-    const res = await resolveGroupReportApi(selectedGroup._id, reportId, action);
+    if (action === "delete_target") {
+      Modal.confirm({
+        title: "Xóa nội dung bị tố cáo?",
+        content: "Nội dung sẽ bị xóa khỏi nhóm và tố cáo được đánh dấu đã xử lý.",
+        okText: "Xóa",
+        okButtonProps: { danger: true },
+        cancelText: "Hủy",
+        onOk: () => handleResolveReport(reportId, "confirm_delete_target"),
+      });
+      return;
+    }
+
+    const normalizedAction = action === "confirm_delete_target" ? "delete_target" : action;
+    const res = await resolveGroupReportApi(selectedGroup._id, reportId, normalizedAction);
     if (res?.EC === 0) {
       message.success(res.EM || "Đã xử lý tố cáo");
       await loadGroupDetail(selectedGroup._id);
@@ -1048,7 +1084,46 @@ const GroupsPage = () => {
 
   const renderPostComposer = () =>
     canPost ? (
-      <section className="tg-composer">
+      <>
+      <CreatePostComposer
+        avatar={userProfile?.avatar || user?.avatar}
+        content={postContent}
+        files={postFiles}
+        modalPlaceholder="Tạo bài viết trong nhóm..."
+        name={displayName}
+        onContentChange={setPostContent}
+        onFilesChange={(fileList) => setPostFiles(fileList)}
+        onOpenChange={setPostComposerOpen}
+        onRemoveFile={(uid) => setPostFiles((prev) => prev.filter((item) => item.uid !== uid))}
+        onSubmit={handleCreatePost}
+        open={postComposerOpen}
+        triggerPlaceholder="Bạn viết gì đi..."
+        variant="group"
+        visibilityNode={
+          selectedGroup?.privacy !== "private" ? null : <Tag>Chỉ thành viên nhóm</Tag>
+        }
+        visibilityOptions={
+          selectedGroup?.privacy !== "private"
+            ? [
+                { value: "group", label: "Chỉ trong nhóm" },
+                { value: "public", label: "Công khai" },
+              ]
+            : []
+        }
+        visibilityValue={postVisibility}
+        onVisibilityChange={setPostVisibility}
+      />
+      <section className="tg-composer tg-composer-collapsed legacy-composer-hidden">
+        <button
+          className="composer-trigger"
+          type="button"
+          onClick={() => setPostComposerOpen(true)}
+        >
+          <Avatar size={44} src={getMediaUrl(userProfile?.avatar)} icon={<UserOutlined />}>
+            {getInitials(displayName)}
+          </Avatar>
+          <span>Bạn viết gì đi...</span>
+        </button>
         <Input.TextArea
           rows={3}
           value={postContent}
@@ -1103,6 +1178,86 @@ const GroupsPage = () => {
           </Button>
         </div>
       </section>
+      <Modal
+        className="create-post-modal"
+        title={<div className="create-post-title">Tạo bài viết</div>}
+        open={false}
+        onCancel={() => setPostComposerOpen(false)}
+        footer={null}
+        width={620}
+        centered
+      >
+        <div className="create-post-author">
+          <Avatar size={48} src={getMediaUrl(userProfile?.avatar)} icon={<UserOutlined />}>
+            {getInitials(displayName)}
+          </Avatar>
+          <div>
+            <strong>{displayName}</strong>
+            {selectedGroup?.privacy !== "private" ? (
+              <Select
+                value={postVisibility}
+                onChange={setPostVisibility}
+                size="small"
+                style={{ minWidth: 150 }}
+                options={[
+                  { value: "group", label: "Chỉ trong nhóm" },
+                  { value: "public", label: "Công khai" },
+                ]}
+              />
+            ) : (
+              <Tag>Chỉ thành viên nhóm</Tag>
+            )}
+          </div>
+        </div>
+        <Input.TextArea
+          className="create-post-textarea"
+          autoFocus
+          autoSize={{ minRows: 7, maxRows: 12 }}
+          value={postContent}
+          onChange={(event) => setPostContent(event.target.value)}
+          placeholder="Tạo bài viết trong nhóm..."
+        />
+        <div className="create-post-addons">
+          <strong>Thêm vào bài viết của bạn</strong>
+          <Upload
+            accept="image/*,video/*"
+            beforeUpload={() => false}
+            fileList={postFiles}
+            multiple
+            onChange={({ fileList }) => setPostFiles(fileList.slice(0, 10))}
+            showUploadList={false}
+          >
+            <Button icon={<PictureOutlined />} shape="circle" type="text" />
+          </Upload>
+        </div>
+        {postFiles.length ? (
+          <div className="composer-media-list create-post-file-list">
+            {postFiles.map((file) => (
+              <Tag
+                key={file.uid}
+                closable
+                closeIcon={<DeleteOutlined />}
+                onClose={(event) => {
+                  event.preventDefault();
+                  setPostFiles((prev) => prev.filter((item) => item.uid !== file.uid));
+                }}
+              >
+                {file.name}
+              </Tag>
+            ))}
+          </div>
+        ) : null}
+        <Button
+          block
+          className="create-post-submit"
+          type="primary"
+          disabled={!postContent.trim() && postFiles.length === 0}
+          onClick={handleCreatePost}
+        >
+          Đăng
+        </Button>
+      </Modal>
+      </>
     ) : null;
 
   const renderReactionPicker = (post) => (
@@ -1541,6 +1696,9 @@ const GroupsPage = () => {
                 >
                   Đã xử lý
                 </Button>
+                <Button danger onClick={() => handleResolveReport(report._id, "delete_target")}>
+                  Xóa nội dung
+                </Button>
                 <Button danger onClick={() => handleResolveReport(report._id, "rejected")}>
                   Bỏ qua
                 </Button>
@@ -1602,6 +1760,15 @@ const GroupsPage = () => {
         canComment={canComment}
         canDeleteComment={canDeleteComment}
         onDeleteComment={handleDeleteComment}
+        onHideComment={async (post, commentId) => {
+          const res = await hideCommentApi(commentId);
+          if (res?.EC === 0) {
+            removeCommentFromGroupPost(post._id, commentId);
+            message.success(res.EM || "Đã ẩn bình luận");
+          } else {
+            message.error(res?.EM || "Không thể ẩn bình luận");
+          }
+        }}
         onReportComment={handleReportComment}
         onReact={(post) => handleReactPost(post, post.myReaction || "like")}
         onShare={handleSharePost}
