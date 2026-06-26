@@ -25,6 +25,7 @@ import {
   CloseOutlined,
 } from "@ant-design/icons";
 import { getMediaUrl } from "../util/media";
+import Sidebar from "../components/layout/sidebar";
 import {
   banAdminUserApi,
   getAdminDashboardApi,
@@ -456,109 +457,109 @@ const AdminPage = () => {
 
   return (
     <>
-      <div style={{ display: 'flex', minHeight: '100vh', background: '#ffffff' }}>
-        {/* Main Content Area (matches Figma's AppShell) */}
-        <div style={{ flex: 1, display: 'flex' }}>
-          {/* Main Content Container (matches Figma's Main Content) */}
-          <div style={{ flex: 1, display: 'flex', maxWidth: 1180 }}>
-            {/* Admin Panel (matches Figma's AdminPanel) */}
-            <div style={{ display: 'flex', width: '100%' }}>
-              {/* Admin Sidebar (matches Figma's Sidebar instance) */}
-              <AdminSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
-              
-              {/* Main Content (matches Figma's Container) */}
-              <div style={{ flex: 1, padding: 24 }}>
-                {/* Header (matches Figma's Heading 2) */}
-                <div style={{ marginBottom: 28 }}>
-                  <h1 style={{
-                    fontSize: 24,
-                    fontWeight: 800,
-                    color: '#111827',
-                    margin: 0
-                  }}>Tổng quan hệ thống</h1>
-                </div>
+      <div style={{ display: 'flex', minHeight: '100vh', background: '#ffffff', width: '100%' }}>
+        {/* App Left Sidebar (267px, matches Figma) */}
+        <Sidebar />
+        
+        {/* Main Content (913px, matches Figma's Main Content) */}
+        <div style={{ width: 913, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+          {/* Admin Panel */}
+          <div style={{ display: 'flex', width: '100%' }}>
+            {/* Admin Sidebar (208px, matches Figma's Sidebar instance) */}
+            <AdminSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+            
+            {/* Admin Main Content Container (705px, matches Figma) */}
+            <div style={{ width: 705, padding: 24 }}>
+              {/* Header (matches Figma's Heading 2) */}
+              <div style={{ marginBottom: 28 }}>
+                <h1 style={{
+                  fontSize: 24,
+                  fontWeight: 800,
+                  color: '#111827',
+                  margin: 0
+                }}>Tổng quan hệ thống</h1>
+              </div>
 
-                {/* Stat Cards Container (matches Figma's Container:margin) */}
-                <div style={{ marginBottom: 28 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-                    <StatCard 
-                      icon={UserOutlined} 
-                      title="Người dùng" 
-                      value={metrics.totalUsers || 0} 
-                      change="+12% tuần"
-                      color="#7F00FD"
-                    />
-                    <StatCard 
-                      icon={FileTextOutlined} 
-                      title="Bài viết" 
-                      value={metrics.totalPosts || 0} 
-                      change="+8% tuần"
-                      color="#1890FF"
-                    />
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                    <StatCard 
-                      icon={WarningOutlined} 
-                      title="Báo cáo" 
-                      value={metrics.openReports || 0} 
-                      change="-3 hôm nay"
-                      color="#FAAD14"
-                    />
-                    <StatCard 
-                      icon={BarChartOutlined} 
-                      title="Hoạt động/ngày" 
-                      value={metrics.activeUsers || 0} 
-                      change="+5% tuần"
-                      color="#52C41A"
-                    />
-                  </div>
+              {/* Stat Cards Container (matches Figma's Container:margin) */}
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                  <StatCard 
+                    icon={UserOutlined} 
+                    title="Người dùng" 
+                    value={metrics.totalUsers || 0} 
+                    change="+12% tuần"
+                    color="#7F00FD"
+                  />
+                  <StatCard 
+                    icon={FileTextOutlined} 
+                    title="Bài viết" 
+                    value={metrics.totalPosts || 0} 
+                    change="+8% tuần"
+                    color="#1890FF"
+                  />
                 </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <StatCard 
+                    icon={WarningOutlined} 
+                    title="Báo cáo" 
+                    value={metrics.openReports || 0} 
+                    change="-3 hôm nay"
+                    color="#FAAD14"
+                  />
+                  <StatCard 
+                    icon={BarChartOutlined} 
+                    title="Hoạt động/ngày" 
+                    value={metrics.activeUsers || 0} 
+                    change="+5% tuần"
+                    color="#52C41A"
+                  />
+                </div>
+              </div>
 
-                {/* Chart Placeholder (matches Figma's MiniBarChart) */}
+              {/* Chart Placeholder (matches Figma's MiniBarChart) */}
+              <div style={{
+                background: '#ffffff',
+                borderRadius: 16,
+                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                padding: 20.8,
+                marginBottom: 24
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+                  <BarChartOutlined style={{ color: '#4b5563', fontSize: 16 }} />
+                  <span style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}>Bài viết theo tháng</span>
+                </div>
                 <div style={{
-                  background: '#ffffff',
-                  borderRadius: 16,
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                  padding: 20.8,
-                  marginBottom: 24
+                  height: 128,
+                  background: '#f9fafb',
+                  borderRadius: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#9ca3af',
+                  fontSize: 14
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-                    <BarChartOutlined style={{ color: '#4b5563', fontSize: 16 }} />
-                    <span style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}>Bài viết theo tháng</span>
-                  </div>
-                  <div style={{
-                    height: 128,
-                    background: '#f9fafb',
-                    borderRadius: 12,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#9ca3af',
-                    fontSize: 14
-                  }}>
-                    Biểu đồ sẽ hiển thị ở đây
-                  </div>
+                  Biểu đồ sẽ hiển thị ở đây
                 </div>
+              </div>
 
-                {/* Search Bar and Table */}
-                <div>
-                  {/* Search Bar */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                    <Input.Search
-                      allowClear
-                      placeholder="Tìm theo tên, email hoặc nội dung"
-                      value={keyword}
-                      onChange={(event) => setKeyword(event.target.value)}
-                      onSearch={handleSearch}
-                      style={{ width: 320 }}
-                    />
-                    <Typography.Text type="secondary" style={{ fontSize: 14 }}>
-                      Cập nhật gần nhất: {formatDate(new Date().toISOString())}
-                    </Typography.Text>
-                  </div>
-                  {/* Table */}
-                  {tabContent[activeTab]}
+              {/* Search Bar and Table */}
+              <div>
+                {/* Search Bar */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                  <Input.Search
+                    allowClear
+                    placeholder="Tìm theo tên, email hoặc nội dung"
+                    value={keyword}
+                    onChange={(event) => setKeyword(event.target.value)}
+                    onSearch={handleSearch}
+                    style={{ width: 320 }}
+                  />
+                  <Typography.Text type="secondary" style={{ fontSize: 14 }}>
+                    Cập nhật gần nhất: {formatDate(new Date().toISOString())}
+                  </Typography.Text>
                 </div>
+                {/* Table */}
+                {tabContent[activeTab]}
               </div>
             </div>
           </div>
