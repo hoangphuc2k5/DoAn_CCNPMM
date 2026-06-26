@@ -23,6 +23,7 @@ const UserPage = lazy(() => import("./pages/user.jsx"));
 const UserProfilePage = lazy(() => import("./pages/user-profile.jsx"));
 const SearchPage = lazy(() => import("./pages/search.jsx"));
 const ChatPage = lazy(() => import("./pages/chat.jsx"));
+const NotificationPage = lazy(() => import("./pages/notifications.jsx"));
 const GroupsPage = lazy(() => import("./pages/groups.jsx"));
 
 const withSuspense = (element) => (
@@ -102,6 +103,8 @@ const router = createBrowserRouter(
           element: withSuspense(<ChatPage />),
         },
         {
+          path: "notifications",
+          element: withSuspense(<NotificationPage />),
           path: "groups",
           element: withSuspense(<GroupsPage />),
         },

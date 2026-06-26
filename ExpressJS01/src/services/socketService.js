@@ -144,10 +144,16 @@ const emitSeenMessage = (conversationId, userId, seenAt) => {
   });
 };
 
+const emitNotification = (userId, payload) => {
+  if (!ioInstance || !userId) return;
+  ioInstance.to(userId.toString()).emit("notification:new", payload);
+};
+
 module.exports = {
   initSocket,
   getIO,
   emitNewMessage,
   emitRecallMessage,
   emitSeenMessage,
+  emitNotification,
 };

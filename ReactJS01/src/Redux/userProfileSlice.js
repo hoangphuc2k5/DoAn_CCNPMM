@@ -134,6 +134,33 @@ const userProfileSlice = createSlice({
     resetUserProfile: (state) => {
       return initialState;
     },
+    addCreatedPost: (state, action) => {
+      state.posts = [action.payload, ...state.posts];
+    },
+    updatePostInSlice: (state, action) => {
+      state.posts = state.posts.map((post) =>
+        post._id === action.payload._id || post.id === action.payload.id ? action.payload : post
+      );
+    },
+    deletePostInSlice: (state, action) => {
+      state.posts = state.posts.filter(
+        (post) => post._id !== action.payload && post.id !== action.payload
+      );
+    },
+    togglePinInSlice: (state, action) => {
+      const postId = action.payload;
+      state.posts = state.posts.map((post) => {
+        if (post._id === postId || post.id === postId) {
+          return { ...post, isPinned: !post.isPinned };
+        }
+        return { ...post, isPinned: false };
+      });
+      state.posts.sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      });
+    },
   },
   extraReducers: (builder) => {
     // Fetch User Profile
@@ -224,6 +251,13 @@ const userProfileSlice = createSlice({
   },
 });
 
-export const { clearError, setActiveTab, resetUserProfile } =
-  userProfileSlice.actions;
+export const {
+  clearError,
+  setActiveTab,
+  resetUserProfile,
+  addCreatedPost,
+  updatePostInSlice,
+  deletePostInSlice,
+  togglePinInSlice,
+} = userProfileSlice.actions;
 export default userProfileSlice.reducer;

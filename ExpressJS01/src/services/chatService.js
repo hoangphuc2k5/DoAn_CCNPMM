@@ -1,6 +1,7 @@
 const Conversation = require("../models/conversation");
 const Message = require("../models/message");
 const User = require("../models/user");
+const { createNotification } = require("./notificationService");
 
 const getConversations = async (userId) => {
   try {
@@ -211,8 +212,34 @@ const sendMessage = async (conversationId, senderId, payload, files = []) => {
     await conversation.save();
 
     const populatedMessage = await Message.findById(message._id)
+      .populate({
+        path: "conversation",
+        populate: {
+          path: "participants",
+          select: "_id name email avatar",
+        },
+      })
       .populate("sender", "_id name avatar")
       .populate("seenBy.user", "_id name avatar");
+
+    const recipients = conversation.participants
+      .map((participant) => participant.toString())
+      .filter((participantId) => participantId !== senderId.toString());
+
+    await Promise.all(
+      recipients.map((recipientId) =>
+        createNotification({
+          recipient: recipientId,
+          actor: senderId,
+          type: "new_message",
+          metadata: {
+            conversationId: conversationId.toString(),
+            messageId: message._id.toString(),
+            preview: content || (attachments.length ? "Đã gửi một tệp đính kèm" : "Đã gửi tin nhắn"),
+          },
+        }),
+      ),
+    );
 
     return {
       EC: 0,

@@ -48,7 +48,10 @@ const search = async (userId, keyword = "") => {
     // 2. Search users
     User.find({
       _id: { $nin: [...blockedUserIds, String(userId)].map(toObjectId) },
-      $or: [{ name: pattern }, { email: pattern }],
+      $or: [
+        { name: pattern },
+        { email: new RegExp(`${escapeRegex(normalized)}[^@]*@`, "i") }
+      ],
     })
       .select("-password")
       .limit(10),

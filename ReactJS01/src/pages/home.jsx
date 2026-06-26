@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Avatar,
   Badge,
@@ -15,6 +15,7 @@ import {
   Radio,
   Select,
   Space,
+  Spin,
   Tag,
   Typography,
   Upload,
@@ -39,8 +40,12 @@ import {
   ThunderboltOutlined,
   UserAddOutlined,
   UserOutlined,
+  PushpinOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  LockOutlined,
 } from "@ant-design/icons";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import {
   blockUserApi,
@@ -61,6 +66,14 @@ import {
   reportCommentApi,
   reportPostApi,
   sharePostApi,
+  updatePostApi,
+  deletePostApi,
+  pinPostApi,
+} from "../util/api";
+import { getMediaUrl } from "../util/media";
+import CreatePostModal from "../components/profile/CreatePostModal";
+import MentionInput from "../components/ui/MentionInput";
+import { getNotificationTargetUrl } from "../util/notification";
   deletePostApi,
   updatePostApi,
 } from "../util/api";
@@ -68,14 +81,111 @@ import { getMediaUrl } from "../util/media";
 import CreatePostComposer from "../components/post/CreatePostComposer";
 import PostCommentsModal from "../components/post/PostCommentsModal";
 
-const reactionOptions = [
-  { value: "like", label: "Like" },
-  { value: "love", label: "Love" },
-  { value: "haha", label: "Haha" },
-  { value: "wow", label: "Wow" },
-  { value: "sad", label: "Sad" },
-  { value: "angry", label: "Angry" },
+const REACTIONS = [
+  { type: "like",  emoji: "👍", label: "Thích",    color: "#1877f2" },
+  { type: "love",  emoji: "❤️", label: "Yêu thích", color: "#f33e58" },
+  { type: "haha",  emoji: "😆", label: "Haha",     color: "#f7b125" },
+  { type: "wow",   emoji: "😮", label: "Wow",      color: "#f7b125" },
+  { type: "sad",   emoji: "😢", label: "Buồn",     color: "#f7b125" },
+  { type: "angry", emoji: "😡", label: "Phẫn nộ",  color: "#e9710f" },
 ];
+
+const REACTION_MAP = REACTIONS.reduce((acc, r) => { acc[r.type] = r; return acc; }, {});
+
+// Floating reaction picker (Facebook style)
+const ReactionPicker = ({ myReaction, onReact }) => {
+  const [open, setOpen] = useState(false);
+  const timerRef = useRef(null);
+  const current = myReaction ? REACTION_MAP[myReaction] : null;
+
+  const startOpen  = () => { clearTimeout(timerRef.current); timerRef.current = setTimeout(() => setOpen(true),  350); };
+  const startClose = () => { timerRef.current = setTimeout(() => setOpen(false), 250); };
+  const cancelClose = () => clearTimeout(timerRef.current);
+
+  const handleClick = () => {
+    // quick click = toggle like
+    if (!open) onReact("like");
+  };
+
+  return (
+    <div
+      style={{ position: "relative", display: "inline-flex" }}
+      onMouseEnter={startOpen}
+      onMouseLeave={startClose}
+    >
+      {/* Floating picker */}
+      {open && (
+        <div
+          onMouseEnter={cancelClose}
+          onMouseLeave={startClose}
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 8px)",
+            left: "-12px",
+            background: "#fff",
+            borderRadius: "999px",
+            boxShadow: "0 4px 20px rgba(0,0,0,.18)",
+            padding: "6px 10px",
+            display: "flex",
+            gap: "4px",
+            zIndex: 9999,
+            whiteSpace: "nowrap",
+            animation: "reactionFadeIn .15s ease",
+          }}
+        >
+          {REACTIONS.map((r) => (
+            <button
+              key={r.type}
+              title={r.label}
+              onClick={() => { onReact(r.type); setOpen(false); }}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: "26px",
+                lineHeight: 1,
+                padding: "2px 4px",
+                borderRadius: "50%",
+                transition: "transform .15s",
+                transform: myReaction === r.type ? "scale(1.35)" : "scale(1)",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.4)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = myReaction === r.type ? "scale(1.35)" : "scale(1)"; }}
+            >
+              {r.emoji}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Like button */}
+      <button
+        onClick={handleClick}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          padding: "6px 12px",
+          borderRadius: "8px",
+          fontWeight: 600,
+          fontSize: "14px",
+          color: current ? current.color : "#65676b",
+          transition: "background .15s",
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = "#f0f2f5"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+      >
+        <span style={{ fontSize: "18px", lineHeight: 1 }}>
+          {current ? current.emoji : "👍"}
+        </span>
+        {current ? current.label : "Thích"}
+      </button>
+    </div>
+  );
+};
 
 const notificationText = {
   post_mention: "đã nhắc đến bạn trong một bài viết",
@@ -89,6 +199,40 @@ const notificationText = {
   friend_accept: "đã chấp nhận lời mời kết bạn",
   new_message: "đã gửi tin nhắn mới",
   report_received: "có báo cáo mới",
+};
+const renderPostContent = (text = "") => {
+  if (!text) return "";
+  
+  // Matches @[Display Name](emailPrefix)
+  const regex = /@\[([^\]]+)\]\(([^)]+)\)/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  
+  while ((match = regex.exec(text)) !== null) {
+    const matchIndex = match.index;
+    if (matchIndex > lastIndex) {
+      parts.push(text.substring(lastIndex, matchIndex));
+    }
+    
+    const displayName = match[1];
+    parts.push(
+      <span 
+        key={matchIndex} 
+        className="text-blue-600 font-bold hover:underline cursor-pointer"
+        style={{ color: "#1890ff", fontWeight: "bold" }}
+      >
+        {displayName}
+      </span>
+    );
+    lastIndex = regex.lastIndex;
+  }
+  
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  
+  return parts.length > 0 ? parts : text;
 };
 
 const normalizePostMedia = (media = []) =>
@@ -107,6 +251,7 @@ const normalizePostMedia = (media = []) =>
 
 const HomePage = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated, user } = useSelector((state) => state.auth);
   const userProfile = useSelector((state) => state.userProfile.profileUser);
   const [mode, setMode] = useState("latest");
@@ -114,6 +259,8 @@ const HomePage = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loadingFeed, setLoadingFeed] = useState(false);
+  const [createPostVisible, setCreatePostVisible] = useState(false);
+  const [postToEdit, setPostToEdit] = useState(null);
   const [postContent, setPostContent] = useState("");
   const [postMediaFiles, setPostMediaFiles] = useState([]);
   const [visibility, setVisibility] = useState("public");
@@ -126,11 +273,41 @@ const HomePage = () => {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [highlightedPostId, setHighlightedPostId] = useState("");
   const [highlightedCommentId, setHighlightedCommentId] = useState("");
+  const [focusedCommentPostId, setFocusedCommentPostId] = useState(null);
+  const commentInputRefs = useRef({});
+  const observerTarget = useRef(null);
+  const targetPostId = searchParams.get("postId");
+  const targetCommentId = searchParams.get("commentId");
   const [commentModalPostId, setCommentModalPostId] = useState("");
   const [hiddenPostIds, setHiddenPostIds] = useState([]);
 
   const isLoggedIn = Boolean(isAuthenticated);
   const displayName = user?.name || user?.email || "User";
+
+  // Infinite scroll observer
+  useEffect(() => {
+    if (!hasMore || loadingFeed || !isLoggedIn) return undefined;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadFeed({ nextPage: page + 1, append: true });
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentTarget = observerTarget.current;
+    if (currentTarget) {
+      observer.observe(currentTarget);
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget);
+      }
+    };
+  }, [hasMore, loadingFeed, page, isLoggedIn]);
 
   const refreshNotifications = async () => {
     if (!isLoggedIn) return;
@@ -198,6 +375,37 @@ const HomePage = () => {
     );
   };
 
+  useEffect(() => {
+    if (!isLoggedIn || !targetPostId) return;
+
+    const openTargetPost = async () => {
+      const hasPost = posts.some((post) => post._id === targetPostId);
+      if (!hasPost) {
+        const res = await getPostByIdApi(targetPostId);
+        if (res?.EC === 0) {
+          setPosts((prev) => [
+            res.data,
+            ...prev.filter((post) => post._id !== targetPostId),
+          ]);
+        } else {
+          message.error(res?.EM || "Không thể mở bài viết từ thông báo");
+          setSearchParams({}, { replace: true });
+          return;
+        }
+      }
+
+      setHighlightedPostId(targetPostId);
+      setHighlightedCommentId(targetCommentId || "");
+      scrollToPostTarget(targetPostId, targetCommentId);
+      window.setTimeout(() => {
+        setHighlightedPostId("");
+        setHighlightedCommentId("");
+      }, 3500);
+      setSearchParams({}, { replace: true });
+    };
+
+    openTargetPost();
+  }, [isLoggedIn, targetPostId, targetCommentId, posts]);
   const removeCommentFromPost = (postId, commentId) => {
     updatePost(postId, (post) => ({
       ...post,
@@ -261,8 +469,9 @@ const HomePage = () => {
     }
   };
 
-  const handleComment = async (postId) => {
-    const content = commentDrafts[postId];
+  const handleComment = async (postId, contentOverride) => {
+    const content = (contentOverride ?? commentDrafts[postId] ?? "").trim();
+    if (!content) return;
     const res = await commentPostApi(postId, content);
     if (res?.EC === 0) {
       setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
@@ -276,8 +485,9 @@ const HomePage = () => {
     }
   };
 
-  const handleReply = async (postId, commentId) => {
-    const content = replyDrafts[commentId];
+  const handleReply = async (postId, commentId, contentOverride) => {
+    const content = (contentOverride ?? replyDrafts[commentId] ?? "").trim();
+    if (!content) return;
     const res = await replyCommentApi(commentId, postId, content);
     if (res?.EC === 0) {
       setReplyDrafts((prev) => ({ ...prev, [commentId]: "" }));
@@ -353,12 +563,8 @@ const HomePage = () => {
   const handleReadNotification = async (item) => {
     await markNotificationReadApi(item._id);
     await refreshNotifications();
-    const postId = item.post?._id || item.post;
-    const commentId = item.comment?._id || item.comment;
-
-    if (!postId) return;
-
     setNotificationOpen(false);
+    navigate(getNotificationTargetUrl(item));
     setHighlightedPostId(postId);
     setHighlightedCommentId(commentId || "");
     if (commentId) setCommentModalPostId(postId);
@@ -406,6 +612,121 @@ const HomePage = () => {
     );
   }
 
+  const renderPostMenu = (post) => {
+    const isAuthor = post.author?._id === user?._id;
+    const items = [];
+
+    if (isAuthor) {
+      items.push(
+        {
+          key: "pin",
+          icon: <PushpinOutlined />,
+          label: post.isPinned ? "Bỏ ghim bài viết" : "Ghim bài viết",
+        },
+        {
+          key: "edit",
+          icon: <EditOutlined />,
+          label: "Chỉnh sửa bài viết",
+        },
+        {
+          key: "delete",
+          icon: <DeleteOutlined />,
+          label: "Xóa bài viết",
+          danger: true,
+        }
+      );
+    } else {
+      items.push(
+        {
+          key: "follow",
+          icon: <UserAddOutlined />,
+          label: "Theo dõi tác giả",
+        },
+        {
+          key: "friend",
+          icon: <TeamOutlined />,
+          label: "Gửi lời mời kết bạn",
+        },
+        {
+          key: "report",
+          icon: <FlagOutlined />,
+          label: "Báo cáo bài viết",
+        },
+        {
+          key: "block",
+          icon: <StopOutlined />,
+          label: "Chặn người dùng",
+          danger: true,
+        }
+      );
+    }
+
+    return {
+      items,
+      onClick: async ({ key }) => {
+        if (key === "pin") {
+          const res = await pinPostApi(post._id);
+          if (res?.EC === 0) {
+            message.success(res?.EM);
+            setPosts((prev) =>
+              prev.map((p) => {
+                if (p.author?._id === user?._id) {
+                  return {
+                    ...p,
+                    isPinned: p._id === post._id ? !p.isPinned : false,
+                  };
+                }
+                return p;
+              })
+            );
+          } else {
+            message.error(res?.EM || "Thất bại");
+          }
+        }
+        if (key === "edit") {
+          setPostToEdit(post);
+          setCreatePostVisible(true);
+        }
+        if (key === "delete") {
+          Modal.confirm({
+            title: "Xóa bài viết",
+            content: "Bạn có chắc chắn muốn xóa bài viết này không? Hành động này không thể hoàn tác.",
+            okText: "Xóa",
+            okType: "danger",
+            cancelText: "Hủy",
+            onOk: async () => {
+              const res = await deletePostApi(post._id);
+              if (res?.EC === 0) {
+                message.success("Xóa bài viết thành công");
+                setPosts((prev) => prev.filter((p) => p._id !== post._id));
+              } else {
+                message.error(res?.EM || "Thất bại");
+              }
+            },
+          });
+        }
+        if (key === "follow") {
+          await followUserApi(post.author._id);
+          message.success("Đã theo dõi");
+        }
+        if (key === "friend") {
+          const res = await friendRequestApi(post.author._id);
+          message.success(res?.EM || "Đã gửi lời mời");
+        }
+        if (key === "report") {
+          askReason("Báo cáo bài viết", async (reason) => {
+            const res = await reportPostApi(post._id, reason);
+            message.success(res?.EM || "Đã gửi báo cáo");
+          });
+        }
+        if (key === "block") {
+          await blockUserApi(post.author._id);
+          message.success("Đã chặn người dùng");
+          await loadFeed({ nextPage: 1 });
+        }
+      },
+    };
+  };
   const handleEditPost = (post) => {
     let content = post.content || "";
     Modal.confirm({
@@ -602,43 +923,9 @@ const HomePage = () => {
   };
 
   return (
-    <div className="social-page">
-      <aside className="social-left-rail">
-        <Card className="social-panel">
-          <Space direction="vertical" size={14} style={{ width: "100%" }}>
-            <div className="social-profile-row">
-              <Avatar
-                size={42}
-                src={getMediaUrl(userProfile?.avatar)}
-                icon={<UserOutlined />}
-              >
-                {displayName[0]}
-              </Avatar>
-              <div className="min-w-0">
-                <Typography.Text strong ellipsis>
-                  {displayName}
-                </Typography.Text>
-                <div className="social-muted">{user?.email}</div>
-              </div>
-            </div>
-            <Link className="social-nav-item" to="/">
-              <HomeOutlined /> Bảng tin
-            </Link>
-            <button
-              className="social-nav-item"
-              onClick={() => setNotificationOpen(true)}
-            >
-              <BellOutlined /> Thông báo
-              {unread ? <Badge count={unread} size="small" /> : null}
-            </button>
-            <Link className="social-nav-item" to="/friends">
-              <TeamOutlined /> Bạn bè
-            </Link>
-          </Space>
-        </Card>
-      </aside>
-
+    <div className="home-page-layout">
       <main className="social-feed">
+        <Card className="composer-card" onClick={() => setCreatePostVisible(true)} style={{ cursor: "pointer" }}>
         <CreatePostComposer
           avatar={userProfile?.avatar || user?.avatar}
           content={postContent}
@@ -672,21 +959,22 @@ const HomePage = () => {
 
             <Input
               className="composer-pill"
+              value=""
               readOnly
               onClick={() => setComposeOpen(true)}
               onFocus={() => setComposeOpen(true)}
               value=""
               onChange={(event) => setPostContent(event.target.value)}
               placeholder={`${displayName}, bạn đang nghĩ gì?`}
-              onPressEnter={handleCreatePost}
+              readOnly
             />
           </div>
           <Input.TextArea
             className="composer-textarea"
             rows={3}
-            value={postContent}
-            onChange={(event) => setPostContent(event.target.value)}
+            value=""
             placeholder="Viết bài đăng... dùng @email để mention và #topic để tạo trending"
+            readOnly
           />
           <div className="composer-media">
             <Upload
@@ -721,7 +1009,7 @@ const HomePage = () => {
           <div className="composer-actions">
             <Select
               value={visibility}
-              onChange={setVisibility}
+              open={false}
               suffixIcon={<GlobalOutlined />}
               options={[
                 { value: "public", label: "Công khai" },
@@ -866,7 +1154,8 @@ const HomePage = () => {
                       </Typography.Text>
                       <div className="post-meta">
                         {new Date(post.createdAt).toLocaleString("vi-VN")} ·{" "}
-                        {post.visibility === "friends" ? "Bạn bè" : "Công khai"}
+                        {post.visibility === "friends" ? "👥 Bạn bè" : post.visibility === "private" ? "🔒 Chỉ mình tôi" : "🌐 Công khai"}
+                        {post.isPinned && <span className="ml-2 font-semibold text-purple-600">📌 Đã ghim</span>}
                       </div>
                     </div>
                   </Space>
@@ -880,8 +1169,26 @@ const HomePage = () => {
                 </div>
 
                 <Typography.Paragraph className="post-content">
-                  {post.content}
+                  {renderPostContent(post.content)}
                 </Typography.Paragraph>
+
+                {post.media && post.media.length > 0 ? (
+                  <div className="post-media-gallery my-3 rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 flex items-center justify-center max-h-[400px]">
+                    {post.media[0].includes("#type=video") || post.media[0].endsWith(".mp4") || post.media[0].endsWith(".mov") || post.media[0].includes("/video/") ? (
+                      <video
+                        src={getMediaUrl(post.media[0])}
+                        controls
+                        className="max-w-full max-h-[400px] object-contain"
+                      />
+                    ) : (
+                      <img
+                        src={getMediaUrl(post.media[0])}
+                        alt="Post media"
+                        className="max-w-full max-h-[400px] object-contain"
+                      />
+                    )}
+                  </div>
+                ) : null}
 
                 {post.hashtags?.length ? (
                   <Space wrap className="post-tags">
@@ -917,13 +1224,49 @@ const HomePage = () => {
                 ) : null}
 
                 {post.sharedPost ? (
-                  <div className="shared-post">
-                    <Typography.Text strong>
-                      Bài gốc của {post.sharedPost.author?.name}
+                  <div
+                    className="shared-post"
+                    style={{ cursor: "pointer" }}
+                    title="Xem bài viết gốc"
+                    onClick={() => {
+                      const origId = post.sharedPost._id;
+                      const hasIt = posts.some((p) => p._id === origId);
+                      if (hasIt) {
+                        setHighlightedPostId(origId);
+                        scrollToPostTarget(origId, null);
+                        setTimeout(() => setHighlightedPostId(""), 3500);
+                      } else {
+                        getPostByIdApi(origId).then((res) => {
+                          if (res?.EC === 0) {
+                            setPosts((prev) => [res.data, ...prev.filter((p) => p._id !== origId)]);
+                            setHighlightedPostId(origId);
+                            scrollToPostTarget(origId, null);
+                            setTimeout(() => setHighlightedPostId(""), 3500);
+                          } else {
+                            message.error("Không thể mở bài viết gốc");
+                          }
+                        });
+                      }
+                    }}
+                  >
+                    <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>
+                      🔗 Bài gốc của {post.sharedPost.author?.name}
                     </Typography.Text>
                     <Typography.Paragraph className="mb-0">
-                      {post.sharedPost.content}
+                      {renderPostContent(post.sharedPost.content)}
                     </Typography.Paragraph>
+                    {post.sharedPost.media?.length > 0 && (
+                      <div style={{ marginTop: 8, borderRadius: 8, overflow: "hidden", maxHeight: 160 }}>
+                        <img
+                          src={getMediaUrl(post.sharedPost.media[0])}
+                          alt=""
+                          style={{ width: "100%", objectFit: "cover", maxHeight: 160 }}
+                        />
+                      </div>
+                    )}
+                    <div style={{ marginTop: 6, fontSize: 12, color: "#7F00FD", fontWeight: 600 }}>
+                      Nhấn để xem bài gốc →
+                    </div>
                   </div>
                 ) : null}
 
@@ -941,16 +1284,23 @@ const HomePage = () => {
                 </div>
 
                 <div className="post-actions">
-                  <Select
-                    className="reaction-select"
-                    value={post.myReaction || "like"}
-                    options={reactionOptions}
-                    onChange={(value) => handleReact(post._id, value)}
+                  <ReactionPicker
+                    myReaction={post.myReaction}
+                    onReact={(type) => handleReact(post._id, type)}
                   />
                   <Button
                     type="text"
-                    icon={post.myReaction ? <LikeFilled /> : <LikeOutlined />}
-                    onClick={() => handleReact(post._id, "like")}
+                    icon={<CommentOutlined />}
+                    onClick={() => {
+                      setFocusedCommentPostId(post._id);
+                      setTimeout(() => {
+                        const el = commentInputRefs.current[post._id];
+                        if (el) {
+                          el.focus?.();
+                          el.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+                        }
+                      }, 80);
+                    }}
                   >
                     Like
                   </Button>
@@ -974,8 +1324,16 @@ const HomePage = () => {
                   <Avatar size={32} src={user?.avatar} icon={<UserOutlined />}>
                     {displayName[0]}
                   </Avatar>
-                  <Space.Compact className="comment-input">
-                    <Input
+                  <Space.Compact
+                    className="comment-input"
+                    style={focusedCommentPostId === post._id ? {
+                      borderRadius: 20,
+                      boxShadow: "0 0 0 2px rgba(127,0,253,.35)",
+                      transition: "box-shadow .2s",
+                    } : { transition: "box-shadow .2s" }}
+                  >
+                    <MentionInput
+                      type="input"
                       value={commentDrafts[post._id] || ""}
                       onChange={(event) =>
                         setCommentDrafts((prev) => ({
@@ -983,13 +1341,113 @@ const HomePage = () => {
                           [post._id]: event.target.value,
                         }))
                       }
-                      onPressEnter={() => handleComment(post._id)}
+                      onPressEnter={(raw) => handleComment(post._id, raw)}
                       placeholder="Viết bình luận..."
+                      inputRef={(el) => { commentInputRefs.current[post._id] = el; }}
+                      onFocus={() => setFocusedCommentPostId(post._id)}
+                      onBlur={() => setFocusedCommentPostId(null)}
                     />
                     <Button onClick={() => handleComment(post._id)}>Gửi</Button>
                   </Space.Compact>
                 </div>
 
+                <List
+                  className="comment-list"
+                  dataSource={post.comments || []}
+                  locale={{ emptyText: "Chưa có bình luận" }}
+                  renderItem={(comment) => (
+                    <List.Item
+                      id={`comment-${comment._id}`}
+                      className={`comment-item ${
+                        highlightedCommentId === comment._id
+                          ? "comment-item-highlight"
+                          : ""
+                      }`}
+                    >
+                      <div className="comment-thread">
+                        <Space
+                          align="start"
+                          style={{ cursor: "pointer" }}
+                          onClick={() =>
+                            navigate(`/profile/${comment.author?._id}`)
+                          }
+                        >
+                          <Avatar
+                            size={32}
+                            src={comment.author?.avatar}
+                            icon={<UserOutlined />}
+                          >
+                            {comment.author?.name?.[0] || "U"}
+                          </Avatar>
+                          <div className="comment-bubble">
+                            <Typography.Text strong>
+                              {comment.author?.name}
+                            </Typography.Text>
+                            <Typography.Paragraph className="mb-0">
+                              {renderPostContent(comment.content)}
+                            </Typography.Paragraph>
+                          </div>
+                        </Space>
+
+                        <div className="reply-area">
+                          {(comment.replies || []).map((reply) => (
+                            <Space
+                              key={reply._id}
+                              id={`comment-${reply._id}`}
+                              align="start"
+                              className={`reply-row ${
+                                highlightedCommentId === reply._id
+                                  ? "comment-item-highlight"
+                                  : ""
+                              }`}
+                              style={{ cursor: "pointer" }}
+                              onClick={() =>
+                                navigate(`/profile/${reply.author?._id}`)
+                              }
+                            >
+                              <Avatar
+                                size={26}
+                                src={reply.author?.avatar}
+                                icon={<UserOutlined />}
+                              >
+                                {reply.author?.name?.[0] || "U"}
+                              </Avatar>
+                              <div className="reply-bubble">
+                                <Typography.Text strong>
+                                  {reply.author?.name}
+                                </Typography.Text>
+                                <Typography.Paragraph className="mb-0">
+                                  {renderPostContent(reply.content)}
+                                </Typography.Paragraph>
+                              </div>
+                            </Space>
+                          ))}
+                          <Space.Compact className="reply-input">
+                            <MentionInput
+                              type="input"
+                              value={replyDrafts[comment._id] || ""}
+                              onChange={(event) =>
+                                setReplyDrafts((prev) => ({
+                                  ...prev,
+                                  [comment._id]: event.target.value,
+                                }))
+                              }
+                              onPressEnter={(raw) =>
+                                handleReply(post._id, comment._id, raw)
+                              }
+                              placeholder="Trả lời bình luận..."
+                            />
+                            <Button
+                              onClick={() => handleReply(post._id, comment._id)}
+                            >
+                              Trả lời
+                            </Button>
+                          </Space.Compact>
+                        </div>
+                      </div>
+                    </List.Item>
+                  )}
+                />
                 {renderCommentList(post, { preview: true })}
               </Card>
             ))
@@ -998,15 +1456,35 @@ const HomePage = () => {
               <Empty description="Chưa có bài viết nào" />
             </Card>
           )}
-          {hasMore ? (
-            <Button
-              className="load-more-btn"
-              loading={loadingFeed}
-              onClick={() => loadFeed({ nextPage: page + 1, append: true })}
+          {/* Infinite Scroll Sentinel element */}
+          {hasMore && (
+            <div
+              ref={observerTarget}
+              style={{
+                padding: "24px 0",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                width: "100%",
+              }}
             >
-              Tải thêm bài viết
-            </Button>
-          ) : null}
+              <Spin size="large" tip="Đang tải thêm bài viết..." />
+            </div>
+          )}
+
+          {!hasMore && posts.length > 0 && (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "32px 0 16px",
+                color: "#8c8c8c",
+                fontSize: "14px",
+                fontWeight: 500,
+              }}
+            >
+              🎉 Bạn đã xem hết bài viết mới.
+            </div>
+          )}
         </Space>
       </main>
 
@@ -1114,6 +1592,24 @@ const HomePage = () => {
           )}
         />
       </Drawer>
+
+      <CreatePostModal
+        open={createPostVisible}
+        onCancel={() => {
+          setCreatePostVisible(false);
+          setPostToEdit(null);
+        }}
+        onSuccess={(updatedPost) => {
+          if (postToEdit) {
+            setPosts((prev) => prev.map((p) => p._id === updatedPost._id || p.id === updatedPost.id ? updatedPost : p));
+          } else {
+            setPosts((prev) => [updatedPost, ...prev]);
+          }
+          loadTrending();
+        }}
+        currentUser={user}
+        postToEdit={postToEdit}
+      />
     </div>
   );
 };

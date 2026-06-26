@@ -2,53 +2,51 @@ import { Tabs } from "antd";
 import {
   FileTextOutlined,
   TeamOutlined,
-  UserOutlined,
-  PictureOutlined,
+  FolderOutlined,
 } from "@ant-design/icons";
+import "../../styles/user-profile.css";
 
-const ProfileTabs = ({
-  activeTab,
-  onTabChange,
-  postsCount,
-  friendsCount,
-  followersCount,
-}) => {
+const ProfileTabs = ({ activeTab, onTabChange }) => {
   const tabs = [
     {
       key: "posts",
       label: (
-        <>
-          <FileTextOutlined /> Bài viết ({postsCount || 0})
-        </>
-      ),
-    },
-    {
-      key: "friends",
-      label: (
-        <>
-          <TeamOutlined /> Bạn bè ({friendsCount || 0})
-        </>
-      ),
-    },
-    {
-      key: "followers",
-      label: (
-        <>
-          <UserOutlined /> Người theo dõi ({followersCount || 0})
-        </>
+        <span>
+          <FileTextOutlined style={{ marginRight: 6 }} />
+          Bài viết
+        </span>
       ),
     },
     {
       key: "media",
       label: (
-        <>
-          <PictureOutlined /> Ảnh & Video
-        </>
+        <span>
+          <FolderOutlined style={{ marginRight: 6 }} />
+          Album
+        </span>
+      ),
+    },
+    {
+      key: "friends",
+      label: (
+        <span>
+          <TeamOutlined style={{ marginRight: 6 }} />
+          Bạn bè
+        </span>
       ),
     },
   ];
 
-  return <Tabs activeKey={activeTab} onChange={onTabChange} items={tabs} />;
+  return (
+    <div className="profile-tabs-card">
+      <Tabs
+        activeKey={activeTab}
+        onChange={onTabChange}
+        items={tabs}
+        className="profile-custom-tabs"
+      />
+    </div>
+  );
 };
 
 export default ProfileTabs;

@@ -14,6 +14,7 @@ const postSchema = new mongoose.Schema(
     },
     visibility: {
       type: String,
+      enum: ["public", "friends", "private"],
       enum: ["public", "friends", "group"],
       default: "public",
     },
@@ -48,6 +49,15 @@ const postSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "post",
       default: null,
+    },
+    media: [
+      {
+        type: String,
+      },
+    ],
+    isPinned: {
+      type: Boolean,
+      default: false,
     },
     group: {
       type: mongoose.Schema.Types.ObjectId,
