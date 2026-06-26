@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import AuthLayout from "../components/auth/AuthLayout";
@@ -23,6 +24,13 @@ const RegisterPage = () => {
     setFormState((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setLocalError("");
+    if (!formState.name || !formState.email || !formState.password) {
+      setLocalError("Vui lòng điền đầy đủ thông tin.");
+      return;
+    }
   const isCaptchaValid = formState.captcha.trim() === "13";
   const isFormReady =
     formState.name.trim() &&
@@ -50,6 +58,7 @@ const RegisterPage = () => {
       return;
     }
 
+    const result = await dispatch(registerThunk(formState));
     if (!isCaptchaValid) {
       setLocalError("Hãy nhập đúng kết quả phép tính để tiếp tục.");
       return;
@@ -69,6 +78,28 @@ const RegisterPage = () => {
   };
 
   return (
+    <AuthLayout
+      title="Tạo tài khoản mới"
+      subtitle="Đăng ký để bắt đầu sử dụng mạng xã hội mini với feed, tương tác và thông báo."
+      footer={
+        <span>
+          Đã có tài khoản?{" "}
+          <Link className="text-reef hover:text-ink" to="/login">
+            Đăng nhập ngay
+          </Link>
+        </span>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <Input
+          label="Ho va ten"
+          name="name"
+          value={formState.name}
+          onChange={handleChange}
+          placeholder="Nguyễn Văn A"
+        />
+        <Input
+          label="Email"
     <AuthLayout activeTab="register" formLabel="--- Đăng ký ---">
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
         <Input
@@ -86,6 +117,10 @@ const RegisterPage = () => {
           type="email"
           value={formState.email}
           onChange={handleChange}
+          placeholder="you@email.com"
+        />
+        <Input
+          label="Mật khẩu"
           placeholder="Email"
         />
         <Input
@@ -95,6 +130,23 @@ const RegisterPage = () => {
           type="password"
           value={formState.password}
           onChange={handleChange}
+          placeholder="Nhập mật khẩu"
+        />
+        {localError || error ? (
+          <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {localError || error}
+          </div>
+        ) : null}
+        <div className="flex flex-wrap gap-3">
+          <Button type="submit" loading={loading} className="w-full">
+            Tạo tài khoản
+          </Button>
+          <Link to="/" className="w-full">
+            <Button variant="ghost" className="w-full">
+              Về trang chủ
+            </Button>
+          </Link>
+        </div>
           placeholder="Mật khẩu"
         />
 

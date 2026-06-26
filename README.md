@@ -39,4 +39,3 @@
 - Chức năng 4: Tương tác xã hội
 - Chức năng 5: News Feed / Trang chủ
 - Chức năng 7: Thông báo
-- Chức năng 6: Chat / Nhắn tin

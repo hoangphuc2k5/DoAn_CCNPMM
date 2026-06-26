@@ -121,16 +121,19 @@ const authSlice = createSlice({
         state.error = "";
         state.isAuthenticated = true;
         state.user = {
+          _id: action.payload._id,
           email: action.payload.email,
           name: action.payload.name,
+          avatar: action.payload.avatar,
           createdBy: action.payload.createdBy,
         };
+        
       })
       .addCase(fetchAccountThunk.rejected, (state, action) => {
         state.appLoading = false;
         state.isAuthenticated = false;
         state.user = null;
-        state.error = action.payload || "Không thể lấy thông tin.";
+        state.error = action.payload === "Chưa có token." ? "" : action.payload || "Không thể lấy thông tin.";
         localStorage.removeItem("access_token");
       })
       .addCase(forgotPasswordThunk.pending, (state) => {

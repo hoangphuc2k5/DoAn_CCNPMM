@@ -1,39 +1,211 @@
-import axios from './axios.customize';
+import axios from "./axios.customize";
 
-const createUserApi = (name, email, password) => {
-    const URL_API = "/v1/api/register";
-    const data = {
-        name, email, password
-    }
+const createUserApi = (name, email, password) =>
+  axios.post("/v1/api/register", { name, email, password });
 
-    return axios.post(URL_API, data)
-}
+const loginApi = (email, password) => axios.post("/v1/api/login", { email, password });
 
-const loginApi = (email, password) => {
-    const URL_API = "/v1/api/login";
-    const data = {
-        email, password
-    }
+const getUserApi = () => axios.get("/v1/api/user");
 
-    return axios.post(URL_API, data)
-}
+const getAccountApi = () => axios.get("/v1/api/account");
 
-const getUserApi = () => {
-    const URL_API = "/v1/api/user";
-    return axios.get(URL_API)
-}
+const forgotPasswordApi = (email) => axios.post("/v1/api/forgot-password", { email });
 
-const getAccountApi = () => {
-    const URL_API = "/v1/api/account";
-    return axios.get(URL_API)
-}
+const createPostApi = (payload) => axios.post("/v1/api/posts", payload);
 
-const forgotPasswordApi = (email) => {
-    const URL_API = "/v1/api/forgot-password";
-    const data = { email };
-    return axios.post(URL_API, data)
-}
+const getFeedApi = ({ mode = "latest", page = 1, limit = 10 }) =>
+  axios.get("/v1/api/feed", { params: { mode, page, limit } });
+
+const getPostByIdApi = (postId) => axios.get(`/v1/api/posts/${postId}`);
+
+const updatePostApi = (postId, payload) => axios.patch(`/v1/api/posts/${postId}`, payload);
+
+const deletePostApi = (postId) => axios.delete(`/v1/api/posts/${postId}`);
+
+const hidePostApi = (postId) => axios.post(`/v1/api/posts/${postId}/hide`);
+
+const reactPostApi = (postId, type) => axios.post(`/v1/api/posts/${postId}/react`, { type });
+
+const commentPostApi = (postId, content) =>
+  axios.post(`/v1/api/posts/${postId}/comments`, { content });
+
+const replyCommentApi = (commentId, postId, content) =>
+  axios.post(`/v1/api/comments/${commentId}/replies`, { postId, content });
+
+const deleteCommentApi = (commentId) => axios.delete(`/v1/api/comments/${commentId}`);
+
+const hideCommentApi = (commentId) => axios.post(`/v1/api/comments/${commentId}/hide`);
+
+const sharePostApi = (postId, content) => axios.post(`/v1/api/posts/${postId}/share`, { content });
+
+const reportPostApi = (postId, reason) => axios.post(`/v1/api/posts/${postId}/report`, { reason });
+
+const reportCommentApi = (commentId, reason) =>
+  axios.post(`/v1/api/comments/${commentId}/report`, { reason });
+
+const followUserApi = (userId) => axios.post(`/v1/api/users/${userId}/follow`);
+
+const unfollowUserApi = (userId) => axios.delete(`/v1/api/users/${userId}/follow`);
+
+const friendRequestApi = (userId) => axios.post(`/v1/api/users/${userId}/friend-request`);
+
+const respondFriendRequestApi = (requestId, action) =>
+  axios.post(`/v1/api/friend-requests/${requestId}/respond`, { action });
+
+const getRelationshipsApi = () => axios.get("/v1/api/relationships");
+
+const blockUserApi = (userId) => axios.post(`/v1/api/users/${userId}/block`);
+
+const unblockUserApi = (userId) => axios.delete(`/v1/api/users/${userId}/block`);
+
+const reportUserApi = (userId, reason) => axios.post(`/v1/api/users/${userId}/report`, { reason });
+
+const getNotificationsApi = () => axios.get("/v1/api/notifications");
+
+const markNotificationReadApi = (notificationId) =>
+  axios.patch(`/v1/api/notifications/${notificationId}/read`);
+
+const markAllNotificationsReadApi = () => axios.patch("/v1/api/notifications/read-all");
+
+const getTrendingApi = () => axios.get("/v1/api/trending");
+
+const searchApi = (q) => axios.get("/v1/api/search", { params: { q } });
+
+const getConversationsApi = () => axios.get("/v1/api/conversations");
+
+const createConversationApi = (payload) => axios.post("/v1/api/conversations", payload);
+
+const getMessagesApi = (conversationId, params) =>
+  axios.get(`/v1/api/conversations/${conversationId}/messages`, { params });
+
+const sendMessageApi = (conversationId, payload) =>
+  axios.post(`/v1/api/conversations/${conversationId}/messages`, payload);
+
+const recallMessageApi = (messageId) => axios.delete(`/v1/api/messages/${messageId}`);
+
+const markSeenApi = (conversationId) => axios.post(`/v1/api/conversations/${conversationId}/seen`);
+
+const getGroupsApi = (params) => axios.get("/v1/api/groups", { params });
+
+const createGroupApi = (payload) => axios.post("/v1/api/groups", payload);
+
+const getGroupApi = (groupId) => axios.get(`/v1/api/groups/${groupId}`);
+
+const updateGroupApi = (groupId, payload) => axios.patch(`/v1/api/groups/${groupId}`, payload);
+
+const uploadGroupAvatarApi = (groupId, payload) =>
+  axios.put(`/v1/api/groups/${groupId}/avatar`, payload);
+
+const uploadGroupCoverApi = (groupId, payload) =>
+  axios.put(`/v1/api/groups/${groupId}/cover`, payload);
+
+const joinGroupApi = (groupId) => axios.post(`/v1/api/groups/${groupId}/join`);
+
+const leaveGroupApi = (groupId) => axios.delete(`/v1/api/groups/${groupId}/leave`);
+
+const getGroupJoinRequestsApi = (groupId) =>
+  axios.get(`/v1/api/groups/${groupId}/join-requests`);
+
+const respondGroupJoinRequestApi = (groupId, requestId, action) =>
+  axios.patch(`/v1/api/groups/${groupId}/join-requests/${requestId}`, { action });
+
+const removeGroupMemberApi = (groupId, memberId) =>
+  axios.delete(`/v1/api/groups/${groupId}/members/${memberId}`);
+
+const updateGroupMemberRoleApi = (groupId, memberId, role) =>
+  axios.patch(`/v1/api/groups/${groupId}/members/${memberId}/role`, { role });
+
+const getGroupPostsApi = (groupId, params) =>
+  axios.get(`/v1/api/groups/${groupId}/posts`, { params });
+
+const getGroupMediaApi = (groupId, params) =>
+  axios.get(`/v1/api/groups/${groupId}/media`, { params });
+
+const getGroupPendingPostsApi = (groupId) =>
+  axios.get(`/v1/api/groups/${groupId}/posts/pending`);
+
+const reviewGroupPostApi = (groupId, postId, action) =>
+  axios.patch(`/v1/api/groups/${groupId}/posts/${postId}/review`, { action });
+
+const createGroupPostApi = (groupId, payload) =>
+  axios.post(`/v1/api/groups/${groupId}/posts`, payload);
+
+const getGroupReportsApi = (groupId) => axios.get(`/v1/api/groups/${groupId}/reports`);
+
+const resolveGroupReportApi = (groupId, reportId, action) =>
+  axios.patch(`/v1/api/groups/${groupId}/reports/${reportId}`, { action });
+
+const getGroupEventsApi = (groupId) => axios.get(`/v1/api/groups/${groupId}/events`);
+
+const createGroupEventApi = (groupId, payload) =>
+  axios.post(`/v1/api/groups/${groupId}/events`, payload);
+
+const attendGroupEventApi = (groupId, eventId) =>
+  axios.post(`/v1/api/groups/${groupId}/events/${eventId}/attend`);
+
+const leaveGroupEventApi = (groupId, eventId) =>
+  axios.delete(`/v1/api/groups/${groupId}/events/${eventId}/attend`);
 
 export {
-    createUserApi, loginApi, getUserApi, getAccountApi, forgotPasswordApi
-}
+  blockUserApi,
+  commentPostApi,
+  createPostApi,
+  createUserApi,
+  deleteCommentApi,
+  deletePostApi,
+  followUserApi,
+  forgotPasswordApi,
+  friendRequestApi,
+  getAccountApi,
+  getFeedApi,
+  getGroupApi,
+  getGroupEventsApi,
+  getGroupMediaApi,
+  getGroupPendingPostsApi,
+  getGroupPostsApi,
+  getGroupReportsApi,
+  getGroupsApi,
+  getNotificationsApi,
+  getPostByIdApi,
+  getRelationshipsApi,
+  getTrendingApi,
+  getUserApi,
+  hideCommentApi,
+  hidePostApi,
+  loginApi,
+  attendGroupEventApi,
+  createGroupApi,
+  createGroupEventApi,
+  createGroupPostApi,
+  getGroupJoinRequestsApi,
+  joinGroupApi,
+  leaveGroupEventApi,
+  leaveGroupApi,
+  markAllNotificationsReadApi,
+  markNotificationReadApi,
+  reactPostApi,
+  replyCommentApi,
+  reportCommentApi,
+  reportPostApi,
+  reportUserApi,
+  removeGroupMemberApi,
+  resolveGroupReportApi,
+  reviewGroupPostApi,
+  respondGroupJoinRequestApi,
+  respondFriendRequestApi,
+  searchApi,
+  sharePostApi,
+  updateGroupApi,
+  updateGroupMemberRoleApi,
+  updatePostApi,
+  uploadGroupAvatarApi,
+  uploadGroupCoverApi,
+  unblockUserApi,
+  unfollowUserApi,
+  getConversationsApi,
+  createConversationApi,
+  getMessagesApi,
+  sendMessageApi,
+  recallMessageApi,
+  markSeenApi,
+};
