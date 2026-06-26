@@ -1,267 +1,139 @@
-import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
-import { notification } from 'antd';
-import { registerUser, resetRegister } from '../redux/registerSlice';
-
-const initialFormData = {
-    name: '',
-    email: '',
-    password: ''
-};
-import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
 import AuthLayout from "../components/auth/AuthLayout";
-import Input from "../components/ui/Input";
 import Button from "../components/ui/Button";
+import Input from "../components/ui/Input";
 import { registerThunk } from "../Redux/authSlice";
 
 const RegisterPage = () => {
-    const navigate = useNavigate();
-    const dispatch = useDispatch();
-    const { loading, error, success } = useSelector((state) => state.register);
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const { loading, error } = useSelector((state) => state.auth);
+  const [formState, setFormState] = useState({
+    name: "",
+    email: "",
+    password: "",
+    captcha: "",
+  });
+  const [localError, setLocalError] = useState("");
 
-    const [formData, setFormData] = useState(initialFormData);
-    const [validationError, setValidationError] = useState('');
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setFormState((prev) => ({ ...prev, [name]: value }));
+  };
 
-    const handleChange = (e) => {
-        const { name, value } = e.target;
+  const isCaptchaValid = formState.captcha.trim() === "13";
+  const isFormReady =
+    formState.name.trim() &&
+    formState.email.trim() &&
+    formState.password &&
+    isCaptchaValid;
 
-        if (validationError) {
-            setValidationError('');
-        }
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setLocalError("");
 
-        setFormData((prev) => ({
-            ...prev,
-            [name]: value
-        }));
-    };
+    if (!formState.name.trim() || !formState.email.trim() || !formState.password) {
+      setLocalError("Vui lòng điền đầy đủ thông tin.");
+      return;
+    }
 
-    const validateForm = () => {
-        const trimmedName = formData.name.trim();
-        const trimmedEmail = formData.email.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formState.email.trim())) {
+      setLocalError("Email không đúng định dạng.");
+      return;
+    }
 
-        if (!trimmedName || !trimmedEmail || !formData.password) {
-            return 'Please fill in all required fields.';
-        }
+    if (formState.password.length < 6) {
+      setLocalError("Mật khẩu phải có ít nhất 6 ký tự.");
+      return;
+    }
 
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(trimmedEmail)) {
-            return 'Email format is invalid.';
-        }
+    if (!isCaptchaValid) {
+      setLocalError("Hãy nhập đúng kết quả phép tính để tiếp tục.");
+      return;
+    }
 
-        if (formData.password.length < 6) {
-            return 'Password must be at least 6 characters.';
-        }
-
-        return '';
-    };
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-
-        const formError = validateForm();
-        if (formError) {
-            setValidationError(formError);
-            return;
-        }
-
-        dispatch(registerUser({
-            name: formData.name.trim(),
-            email: formData.email.trim(),
-            password: formData.password
-        }));
-    };
-
-    useEffect(() => {
-        if (success) {
-            notification.success({
-                message: 'Register user',
-                description: 'Account created successfully.'
-            });
-            setFormData(initialFormData);
-            navigate('/login');
-            dispatch(resetRegister());
-        }
-
-        if (error) {
-            notification.error({
-                message: 'Register user',
-                description: error
-            });
-            dispatch(resetRegister());
-    const { loading, error } = useSelector((state) => state.auth);
-    const [formState, setFormState] = useState({
-        name: "",
-        email: "",
-        password: "",
-    });
-    const [localError, setLocalError] = useState("");
-
-    const handleChange = (event) => {
-        const { name, value } = event.target;
-        setFormState((prev) => ({ ...prev, [name]: value }));
-    };
-
-    const handleSubmit = async (event) => {
-        event.preventDefault();
-        setLocalError("");
-        if (!formState.name || !formState.email || !formState.password) {
-            setLocalError("Vui lòng điền đầy đủ thông tin.");
-            return;
-        }
-        const result = await dispatch(registerThunk(formState));
-        if (registerThunk.fulfilled.match(result)) {
-            navigate("/login");
-        }
-    }, [success, error, navigate, dispatch]);
-
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-md w-full space-y-8">
-                <div>
-                    <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-                        Create an account
-                    </h2>
-                    <p className="mt-2 text-center text-sm text-gray-600">
-                        Register with your email to continue
-                    </p>
-                </div>
-
-                <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-                    {validationError ? (
-                        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                            {validationError}
-                        </div>
-                    ) : null}
-
-                    <div className="rounded-md shadow-sm -space-y-px">
-                        <div>
-                            <label htmlFor="name" className="sr-only">
-                                Name
-                            </label>
-                            <input
-                                id="name"
-                                name="name"
-                                type="text"
-                                required
-                                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                                placeholder="Your name"
-                                value={formData.name}
-                                onChange={handleChange}
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="email" className="sr-only">
-                                Email
-                            </label>
-                            <input
-                                id="email"
-                                name="email"
-                                type="email"
-                                required
-                                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                                placeholder="Email address"
-                                value={formData.email}
-                                onChange={handleChange}
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="password" className="sr-only">
-                                Password
-                            </label>
-                            <input
-                                id="password"
-                                name="password"
-                                type="password"
-                                required
-                                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                                placeholder="Password"
-                                value={formData.password}
-                                onChange={handleChange}
-                            />
-                        </div>
-                    </div>
-
-                    <div>
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            {loading ? 'Creating account...' : 'Register'}
-                        </button>
-                    </div>
-
-                    <div className="text-center">
-                        <Link to="/" className="text-indigo-600 hover:text-indigo-500">
-                            Back to home
-                        </Link>
-                    </div>
-                    <div className="text-center">
-                        <span className="text-gray-600">Already have an account? </span>
-                        <Link to="/login" className="text-indigo-600 hover:text-indigo-500">
-                            Login
-                        </Link>
-                    </div>
-                </form>
-            </div>
-        </div>
-        <AuthLayout
-            title="Tạo tài khoản mới"
-            subtitle="Đăng ký để bắt đầu quản lý dự án, theo dõi tiến độ và nhận thông báo." 
-            footer={
-                <span>
-                    Đã có tài khoản?{" "}
-                    <Link className="text-reef hover:text-ink" to="/login">
-                        Đăng nhập ngay
-                    </Link>
-                </span>
-            }
-        >
-            <form onSubmit={handleSubmit} className="space-y-5">
-                <Input
-                    label="Họ và tên"
-                    name="name"
-                    value={formState.name}
-                    onChange={handleChange}
-                    placeholder="Nguyen Van A"
-                />
-                <Input
-                    label="Email"
-                    name="email"
-                    type="email"
-                    value={formState.email}
-                    onChange={handleChange}
-                    placeholder="you@email.com"
-                />
-                <Input
-                    label="Mật khẩu"
-                    name="password"
-                    type="password"
-                    value={formState.password}
-                    onChange={handleChange}
-                    placeholder="••••••••"
-                />
-                {localError || error ? (
-                    <div className="rounded-2xl border border-ember/30 bg-ember/10 px-4 py-3 text-sm text-ember">
-                        {localError || error}
-                    </div>
-                ) : null}
-                <div className="flex flex-wrap gap-3">
-                    <Button type="submit" loading={loading} className="w-full">
-                        Tạo tài khoản
-                    </Button>
-                    <Link to="/" className="w-full">
-                        <Button variant="ghost" className="w-full">
-                            Về trang chủ
-                        </Button>
-                    </Link>
-                </div>
-            </form>
-        </AuthLayout>
+    const result = await dispatch(
+      registerThunk({
+        name: formState.name.trim(),
+        email: formState.email.trim(),
+        password: formState.password,
+      }),
     );
+
+    if (registerThunk.fulfilled.match(result)) {
+      navigate("/login");
+    }
+  };
+
+  return (
+    <AuthLayout activeTab="register" formLabel="--- Đăng ký ---">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        <Input
+          label="Họ và tên"
+          hideLabel
+          name="name"
+          value={formState.name}
+          onChange={handleChange}
+          placeholder="Họ và tên"
+        />
+        <Input
+          label="Email"
+          hideLabel
+          name="email"
+          type="email"
+          value={formState.email}
+          onChange={handleChange}
+          placeholder="Email"
+        />
+        <Input
+          label="Mật khẩu"
+          hideLabel
+          name="password"
+          type="password"
+          value={formState.password}
+          onChange={handleChange}
+          placeholder="Mật khẩu"
+        />
+
+        <div className="w-full rounded-[14px] border-[1.6px] border-[rgba(127,0,253,0.3)] bg-[#f9fafb] p-[17.6px]">
+          <div className="text-[12px] font-bold uppercase tracking-[0.3px] text-[#6a7282]">
+            Xác nhận bạn không phải robot
+          </div>
+
+          <div className="flex items-center gap-3 pt-2">
+            <div className="rounded-[10px] border border-[#e5e7eb] bg-white px-[12.8px] py-[8.8px] font-mono text-[16px] font-bold leading-6 text-[#364153]">
+              4 + 9 = ?
+            </div>
+            <input
+              type="text"
+              name="captcha"
+              value={formState.captcha}
+              onChange={handleChange}
+              placeholder="Kết quả"
+              className="h-[39.2px] w-24 rounded-[10px] border-[1.6px] border-[rgba(127,0,253,0.3)] bg-white px-[13.6px] text-[14px] text-[#111827] outline-none placeholder:text-[rgba(10,10,10,0.5)]"
+            />
+          </div>
+
+          <div className="pt-2 text-[12px] leading-4 text-[#99a1af]">
+            Nhập kết quả phép tính để xác nhận
+          </div>
+        </div>
+
+        {localError || error ? (
+          <div className="rounded-[14px] border border-[rgba(194,83,26,0.3)] bg-[rgba(194,83,26,0.08)] px-4 py-3 text-sm text-[#c2531a]">
+            {localError || error}
+          </div>
+        ) : null}
+
+        <Button type="submit" loading={loading} disabled={!isFormReady} className="w-full">
+          Tiếp tục →
+        </Button>
+      </form>
+    </AuthLayout>
+  );
 };
 
 export default RegisterPage;
