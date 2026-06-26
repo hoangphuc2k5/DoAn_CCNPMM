@@ -1,9 +1,9 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import AuthLayout from "../components/auth/AuthLayout";
-import Input from "../components/ui/Input";
 import Button from "../components/ui/Button";
+import Input from "../components/ui/Input";
 import { forgotPasswordThunk } from "../Redux/authSlice";
 
 const ForgotPasswordPage = () => {
@@ -24,12 +24,13 @@ const ForgotPasswordPage = () => {
 
   return (
     <AuthLayout
-      title="Quên mật khẩu"
-      subtitle="Nhập email để nhận hướng dẫn khôi phục. Chúng tôi sẽ kiểm tra tài khoản và phản hồi ngay."
+      heading="Khôi phục mật khẩu"
+      activeTab="login"
+      formLabel="--- Quên mật khẩu ---"
       footer={
         <span>
           Bạn đã nhớ mật khẩu?{" "}
-          <Link className="text-reef hover:text-ink" to="/login">
+          <Link className="font-semibold text-[#7f00fd]" to="/login">
             Đăng nhập
           </Link>
         </span>
@@ -38,32 +39,26 @@ const ForgotPasswordPage = () => {
       <form onSubmit={handleSubmit} className="space-y-5">
         <Input
           label="Email"
+          hideLabel
           name="email"
           type="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          placeholder="you@email.com"
+          placeholder="Email"
         />
         {localError || error ? (
-          <div className="rounded-2xl border border-ember/30 bg-ember/10 px-4 py-3 text-sm text-ember">
+          <div className="rounded-[14px] border border-[rgba(194,83,26,0.3)] bg-[rgba(194,83,26,0.08)] px-4 py-3 text-sm text-[#c2531a]">
             {localError || error}
           </div>
         ) : null}
         {message ? (
-          <div className="rounded-2xl border border-reef/30 bg-reef/10 px-4 py-3 text-sm text-reef">
+          <div className="rounded-[14px] border border-[rgba(127,0,253,0.3)] bg-[rgba(127,0,253,0.08)] px-4 py-3 text-sm text-[#7f00fd]">
             {message}
           </div>
         ) : null}
-        <div className="flex flex-wrap gap-3">
-          <Button type="submit" loading={loading} className="w-full">
-            Gửi yêu cầu
-          </Button>
-          <Link to="/" className="w-full">
-            <Button variant="ghost" className="w-full">
-              Về trang chủ
-            </Button>
-          </Link>
-        </div>
+        <Button type="submit" loading={loading} className="w-full">
+          Gửi yêu cầu
+        </Button>
       </form>
     </AuthLayout>
   );
