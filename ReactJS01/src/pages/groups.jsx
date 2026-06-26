@@ -83,6 +83,7 @@ import {
 import { getMediaUrl } from "../util/media";
 import { logout } from "../Redux/authSlice";
 import CreatePostComposer from "../components/post/CreatePostComposer";
+import GroupsSidebar from "../components/layout/GroupsSidebar";
 import PostCommentsModal from "../components/post/PostCommentsModal";
 
 const normalizeMedia = (media = []) =>
@@ -1733,7 +1734,17 @@ const GroupsPage = () => {
 
   return (
     <main className="tegram-groups-app">
-      {renderSidebar()}
+      <GroupsSidebar
+        avatar={userProfile?.avatar || user?.avatar}
+        displayHandle={displayHandle}
+        displayName={displayName}
+        notificationCount={3}
+        userId={user?._id}
+        onLogout={() => {
+          dispatch(logout());
+          navigate("/");
+        }}
+      />
       <section className="tg-workspace">
         {viewMode === "detail" ? renderDetail() : renderDirectory()}
       </section>

@@ -66,6 +66,8 @@ import {
 } from "../util/api";
 import { getMediaUrl } from "../util/media";
 import CreatePostComposer from "../components/post/CreatePostComposer";
+import SocialLeftSidebar from "../components/layout/SocialLeftSidebar";
+import TrendingSidebar from "../components/layout/TrendingSidebar";
 import PostCommentsModal from "../components/post/PostCommentsModal";
 
 const reactionOptions = [
@@ -603,7 +605,14 @@ const HomePage = () => {
 
   return (
     <div className="social-page">
-      <aside className="social-left-rail">
+      <SocialLeftSidebar
+        avatar={userProfile?.avatar || user?.avatar}
+        displayName={displayName}
+        email={user?.email}
+        unread={unread}
+        onNotificationsClick={() => setNotificationOpen(true)}
+      />
+      <aside className="social-left-rail legacy-composer-hidden">
         <Card className="social-panel">
           <Space direction="vertical" size={14} style={{ width: "100%" }}>
             <div className="social-profile-row">
@@ -1010,7 +1019,8 @@ const HomePage = () => {
         </Space>
       </main>
 
-      <aside className="social-right-rail">
+      <TrendingSidebar topics={trending} />
+      <aside className="social-right-rail legacy-composer-hidden">
         <Card className="social-panel" title="Chủ đề thịnh hành">
           <Space wrap>
             {trending.length ? (
