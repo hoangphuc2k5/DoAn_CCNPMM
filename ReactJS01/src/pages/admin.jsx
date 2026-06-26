@@ -1,20 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Button,
-  Card,
-  Col,
-  Empty,
-  Input,
-  Popconfirm,
-  Row,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Typography,
-  Modal,
   Avatar,
+  Button,
   Descriptions,
+  Modal,
+  Spin,
+  Typography,
   message,
 } from "antd";
 import {
@@ -22,10 +13,18 @@ import {
   FileTextOutlined,
   WarningOutlined,
   BarChartOutlined,
+  SearchOutlined,
+  TeamOutlined,
+  SafetyOutlined,
+  DashboardOutlined,
+  HistoryOutlined,
+  FlagOutlined,
+  DeleteOutlined,
+  EyeOutlined,
+  CheckOutlined,
   CloseOutlined,
 } from "@ant-design/icons";
 import { getMediaUrl } from "../util/media";
-import Sidebar from "../components/layout/sidebar";
 import {
   banAdminUserApi,
   getAdminDashboardApi,
@@ -39,118 +38,793 @@ import {
   updateAdminUserStatusApi,
 } from "../util/api";
 
-const roleColors = {
-  admin: "volcano",
-  super_admin: "purple",
-  moderator: "blue",
-  user: "default",
+const COLORS = {
+  purple: "#7F00FD",
+  textPrimary: "#101828",
+  textSecondary: "#364153",
+  textMuted: "#6a7282",
+  textGray: "#4a5565",
+  textLight: "#99a1af",
+  border: "#e5e7eb",
+  borderLight: "#f3f4f6",
+  bgPage: "#f9fafb",
+  green: "#00a63e",
+  greenBg: "#dcfce7",
+  red: "#fb2c36",
+  redBg: "#ffe2e2",
+  orange: "#e17100",
+  orangeBg: "#fef3c6",
+  amber: "#fe9a00",
 };
 
-const statusColors = {
-  active: "green",
-  suspended: "gold",
-  banned: "red",
-  open: "red",
-  reviewing: "blue",
-  resolved: "green",
-  rejected: "default",
+const roleLabels = {
+  admin: "Quản trị viên",
+  super_admin: "Super Admin",
+  moderator: "Kiểm duyệt",
+  user: "Người dùng",
 };
 
-const formatDate = (value) => (value ? new Date(value).toLocaleString("vi-VN") : "--");
+const formatDate = (value) => (value ? new Date(value).toLocaleDateString("vi-VN") : "--");
 
-const StatCard = ({ icon: Icon, title, value, change, color }) => (
-  <div style={{
-    width: 320.5,
-    height: 143.57,
-    background: '#ffffff',
-    borderRadius: 16,
-    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-    padding: '20.8px'
-  }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-      <div style={{
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        background: `${color}15`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <Icon style={{ fontSize: 18, color: color }} />
+const formatDateTime = (value) => (value ? new Date(value).toLocaleString("vi-VN") : "--");
+
+const actionLabels = {
+  "auth.login.success": "Đăng nhập thành công",
+  "auth.login.failed": "Đăng nhập thất bại",
+  "auth.register": "Đăng ký tài khoản",
+  "auth.password_reset.request": "Yêu cầu đặt lại mật khẩu",
+  "auth.password_reset.complete": "Đặt lại mật khẩu",
+};
+
+const formatAction = (action) => actionLabels[action] || action?.replace(/\./g, " · ") || "--";
+
+const formatTarget = (log) => {
+  const type = log.targetType || "";
+  const id = log.targetId ? ` #${String(log.targetId).slice(-6)}` : "";
+  return type ? `${type}${id}` : "--";
+};
+
+const formatNumber = (value) => Number(value || 0).toLocaleString("vi-VN");
+
+const timeAgo = (value) => {
+  if (!value) return "--";
+  const diff = Date.now() - new Date(value).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 60) return `${Math.max(1, minutes)} phút trước`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} giờ trước`;
+  const days = Math.floor(hours / 24);
+  return `${days} ngày trước`;
+};
+
+const getInitials = (name = "") =>
+  name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("") || "U";
+
+const cardShadow = "0px 1px 1.5px rgba(0,0,0,0.1), 0px 1px 1px rgba(0,0,0,0.1)";
+
+const StatusPill = ({ status }) => {
+  const map = {
+    active: { label: "Hoạt động", bg: COLORS.greenBg, color: COLORS.green },
+    suspended: { label: "Tạm khóa", bg: COLORS.orangeBg, color: COLORS.orange },
+    banned: { label: "Bị cấm", bg: COLORS.redBg, color: COLORS.red },
+    open: { label: "Chờ xử lý", bg: COLORS.orangeBg, color: COLORS.orange },
+    reviewing: { label: "Đang xem", bg: "#dbeafe", color: "#2563eb" },
+    resolved: { label: "Đã xử lý", bg: COLORS.greenBg, color: COLORS.green },
+    rejected: { label: "Bỏ qua", bg: "#f3f4f6", color: COLORS.textMuted },
+  };
+  const item = map[status] || map.active;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "2px 8px",
+        borderRadius: 999,
+        background: item.bg,
+        color: item.color,
+        fontSize: 11,
+        fontWeight: 700,
+        lineHeight: "16.5px",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {item.label}
+    </span>
+  );
+};
+
+const StatCard = ({ icon: Icon, title, value, change, iconBg, iconColor }) => (
+  <div
+    style={{
+      background: "#ffffff",
+      border: `0.8px solid ${COLORS.borderLight}`,
+      borderRadius: 16,
+      boxShadow: cardShadow,
+      padding: 20.8,
+      minHeight: 143.57,
+      display: "flex",
+      flexDirection: "column",
+    }}
+  >
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 14,
+          background: iconBg,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Icon style={{ fontSize: 18, color: iconColor }} />
       </div>
       {change && (
-        <span style={{
-          fontSize: 14,
-          fontWeight: 600,
-          color: change.startsWith('+') ? '#10b981' : '#ef4444'
-        }}>
-          {change}
-        </span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#00c950" }}>{change}</span>
       )}
     </div>
-    <div style={{
-      fontSize: 32,
-      fontWeight: 800,
-      color: '#111827',
-      lineHeight: 1.2,
-      marginBottom: 8
-    }}>{value}</div>
-    <div style={{
-      fontSize: 14,
-      color: '#6b7280',
-      fontWeight: 500
-    }}>{title}</div>
+    <div style={{ fontSize: 24, fontWeight: 700, color: COLORS.textPrimary, lineHeight: "32px", marginTop: 12 }}>
+      {formatNumber(value)}
+    </div>
+    <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>{title}</div>
   </div>
 );
 
-const AdminSidebar = ({ activeTab, setActiveTab }) => {
-  const menuItems = [
-    { key: "users", label: "Người dùng" },
-    { key: "posts", label: "Bài viết" },
-    { key: "reports", label: "Báo cáo" },
-    { key: "logs", label: "Nhật ký" },
+const SearchInput = ({ placeholder, value, onChange, onSearch }) => (
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      width: 224,
+      height: 36,
+      padding: "0 12.8px",
+      background: "#ffffff",
+      border: `0.8px solid ${COLORS.border}`,
+      borderRadius: 14,
+    }}
+  >
+    <SearchOutlined style={{ fontSize: 14, color: COLORS.textLight }} />
+    <input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => e.key === "Enter" && onSearch?.()}
+      placeholder={placeholder}
+      style={{
+        flex: 1,
+        border: "none",
+        outline: "none",
+        fontSize: 14,
+        color: COLORS.textPrimary,
+        background: "transparent",
+      }}
+    />
+  </div>
+);
+
+const AdminSidebar = ({ activeTab, setActiveTab, badges }) => {
+  const items = [
+    { key: "overview", label: "Tổng quan", icon: DashboardOutlined },
+    { key: "logs", label: "Lịch sử hệ thống", icon: HistoryOutlined },
+    { key: "users", label: "Người dùng", icon: TeamOutlined, badge: badges.users },
+    { key: "posts", label: "Bài viết", icon: FileTextOutlined },
+    { key: "reports", label: "Báo cáo", icon: FlagOutlined, badge: badges.reports },
   ];
 
   return (
-    <div style={{ width: 208, background: '#ffffff', borderRight: '1px solid #f0f0f0', padding: '16px' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {menuItems.map((item) => (
+    <aside
+      style={{
+        width: 208,
+        flexShrink: 0,
+        background: COLORS.bgPage,
+        borderRight: `0.8px solid ${COLORS.border}`,
+        padding: "16px 16.8px 16px 16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 4,
+        minHeight: "100%",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 8px 20px" }}>
+        <SafetyOutlined style={{ fontSize: 20, color: COLORS.purple }} />
+        <span style={{ fontSize: 14, fontWeight: 700, color: "#1e2939" }}>Admin Panel</span>
+      </div>
+      {items.map(({ key, label, icon: Icon, badge }) => {
+        const active = activeTab === key;
+        return (
           <button
-            key={item.key}
-            onClick={() => setActiveTab(item.key)}
+            key={key}
+            type="button"
+            onClick={() => setActiveTab(key)}
             style={{
-              width: '100%',
-              textAlign: 'left',
-              padding: '12px 16px',
-              borderRadius: 12,
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: 15,
-              fontWeight: 600,
-              transition: 'all 0.2s ease',
-              ...(activeTab === item.key
-                ? { background: '#7F00FD', color: '#ffffff' }
-                : { background: 'transparent', color: '#4b5563' }),
-            }}
-            onMouseEnter={(e) => {
-              if (activeTab !== item.key) {
-                e.currentTarget.style.background = '#f5f5f5';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (activeTab !== item.key) {
-                e.currentTarget.style.background = 'transparent';
-              }
+              position: "relative",
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 12px",
+              borderRadius: 14,
+              border: "none",
+              cursor: "pointer",
+              background: active ? COLORS.purple : "transparent",
+              color: active ? "#ffffff" : COLORS.textGray,
+              fontSize: 14,
+              fontWeight: 500,
+              textAlign: "left",
             }}
           >
-            {item.label}
+            <Icon style={{ fontSize: 16 }} />
+            {label}
+            {badge > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  right: 12,
+                  width: 20,
+                  height: 20,
+                  borderRadius: "50%",
+                  background: COLORS.red,
+                  color: "#fff",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {badge}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </aside>
+  );
+};
+
+const MonthlyChart = ({ posts }) => {
+  const monthly = useMemo(() => {
+    const counts = Array(12).fill(0);
+    posts.forEach((post) => {
+      if (!post.createdAt) return;
+      const month = new Date(post.createdAt).getMonth();
+      counts[month] += 1;
+    });
+    const max = Math.max(...counts, 1);
+    return counts.map((count, index) => ({
+      label: `T${index + 1}`,
+      height: Math.max(8, Math.round((count / max) * 96)),
+      count,
+    }));
+  }, [posts]);
+
+  return (
+    <div
+      style={{
+        background: "#ffffff",
+        border: `0.8px solid ${COLORS.borderLight}`,
+        borderRadius: 16,
+        boxShadow: cardShadow,
+        padding: 20.8,
+        marginBottom: 24,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+        <BarChartOutlined style={{ fontSize: 16, color: COLORS.textSecondary }} />
+        <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.textSecondary }}>Bài viết theo tháng</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 128, paddingTop: 16 }}>
+        {monthly.map((item) => (
+          <div key={item.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+            <div
+              style={{
+                width: "100%",
+                maxWidth: 46,
+                height: item.height,
+                background: COLORS.purple,
+                borderRadius: "6px 6px 0 0",
+                opacity: item.count ? 0.85 : 0.15,
+              }}
+            />
+            <span style={{ fontSize: 9, color: COLORS.textLight }}>{item.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const ActionItems = ({ metrics, onNavigate }) => {
+  const items = [
+    { label: "Báo cáo chưa xử lý", value: metrics.openReports, color: COLORS.red, tab: "reports" },
+    { label: "Người dùng bị report", value: metrics.suspendedUsers, color: COLORS.amber, tab: "users" },
+    { label: "Bài viết vi phạm", value: metrics.flaggedPosts, color: "#ff6900", tab: "posts" },
+  ];
+
+  return (
+    <div
+      style={{
+        background: "#ffffff",
+        border: `0.8px solid ${COLORS.borderLight}`,
+        borderRadius: 16,
+        boxShadow: cardShadow,
+        padding: 20.8,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+        <WarningOutlined style={{ fontSize: 16, color: COLORS.textSecondary }} />
+        <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.textSecondary }}>Cần xử lý</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {items.map((item) => (
+          <button
+            key={item.label}
+            type="button"
+            onClick={() => onNavigate(item.tab)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: 12,
+              borderRadius: 14,
+              border: "none",
+              background: COLORS.bgPage,
+              cursor: "pointer",
+              width: "100%",
+            }}
+          >
+            <span style={{ fontSize: 14, fontWeight: 500, color: COLORS.textSecondary }}>{item.label}</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: item.color }}>{item.value || 0}</span>
           </button>
         ))}
       </div>
     </div>
   );
 };
+
+const OverviewView = ({ metrics, posts, setActiveTab }) => (
+  <>
+    <h1 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textPrimary, margin: 0 }}>Tổng quan hệ thống</h1>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 24 }}>
+      <StatCard
+        icon={UserOutlined}
+        title="Người dùng"
+        value={metrics.totalUsers}
+        change="+12% tuần"
+        iconBg="rgba(127,0,253,0.13)"
+        iconColor={COLORS.purple}
+      />
+      <StatCard
+        icon={FileTextOutlined}
+        title="Bài viết"
+        value={metrics.totalPosts}
+        change="+8% tuần"
+        iconBg="rgba(14,165,233,0.13)"
+        iconColor="#0ea5e9"
+      />
+      <StatCard
+        icon={WarningOutlined}
+        title="Báo cáo"
+        value={metrics.openReports}
+        change="-3 hôm nay"
+        iconBg="rgba(245,158,11,0.13)"
+        iconColor="#f59e0b"
+      />
+      <StatCard
+        icon={BarChartOutlined}
+        title="Hoạt động/ngày"
+        value={metrics.activeUsers}
+        change="+5% tuần"
+        iconBg="rgba(16,185,129,0.13)"
+        iconColor="#10b981"
+      />
+    </div>
+    <div style={{ marginTop: 24 }}>
+      <MonthlyChart posts={posts} />
+      <ActionItems metrics={metrics} onNavigate={setActiveTab} />
+    </div>
+  </>
+);
+
+const UsersView = ({
+  users,
+  keyword,
+  setKeyword,
+  onSearch,
+  onBan,
+  onSuspend,
+  onView,
+  reportCounts,
+}) => (
+  <>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <h1 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textPrimary, margin: 0 }}>Quản lý người dùng</h1>
+      <SearchInput
+        placeholder="Tìm người dùng..."
+        value={keyword}
+        onChange={setKeyword}
+        onSearch={onSearch}
+      />
+    </div>
+    <div
+      style={{
+        marginTop: 20,
+        background: "#ffffff",
+        border: `0.8px solid ${COLORS.borderLight}`,
+        borderRadius: 16,
+        boxShadow: "0px 1px 3px rgba(0,0,0,0.1), 0px 1px 2px -1px rgba(0,0,0,0.1)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.4fr 0.8fr 1fr 0.6fr 0.6fr 0.8fr 0.8fr",
+          gap: 8,
+          padding: "20px 16px",
+          background: COLORS.bgPage,
+          borderBottom: `0.8px solid ${COLORS.borderLight}`,
+          fontSize: 12,
+          fontWeight: 700,
+          color: COLORS.textMuted,
+          textTransform: "uppercase",
+          letterSpacing: 0.3,
+        }}
+      >
+        <span>Người dùng</span>
+        <span>Vai trò</span>
+        <span>Ngày tham gia</span>
+        <span>Bài viết</span>
+        <span>Report</span>
+        <span>Trạng thái</span>
+        <span>Hành động</span>
+      </div>
+      {users.length === 0 ? (
+        <div style={{ padding: 32, textAlign: "center", color: COLORS.textMuted }}>Chưa có dữ liệu user</div>
+      ) : (
+        users.map((record) => (
+          <div
+            key={record._id}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1.4fr 0.8fr 1fr 0.6fr 0.6fr 0.8fr 0.8fr",
+              gap: 8,
+              padding: "12px 16px",
+              alignItems: "center",
+              borderBottom: `0.8px solid ${COLORS.borderLight}`,
+              cursor: "pointer",
+            }}
+            onDoubleClick={() => onView(record)}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <Avatar size={32} src={getMediaUrl(record.avatar)} style={{ backgroundColor: COLORS.purple, flexShrink: 0 }}>
+                {getInitials(record.name || record.email)}
+              </Avatar>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {record.name || "Chưa đặt tên"}
+                </div>
+                <div style={{ fontSize: 12, color: COLORS.textLight }}>
+                  @{record.email?.split("@")[0] || "user"}
+                </div>
+              </div>
+            </div>
+            <span style={{ fontSize: 12, color: COLORS.textGray }}>{roleLabels[record.role] || record.role}</span>
+            <span style={{ fontSize: 12, color: COLORS.textLight }}>{formatDate(record.createdAt)}</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: COLORS.textGray }}>{record.postCount || 0}</span>
+            <span
+              style={{
+                fontSize: 14,
+                fontWeight: 700,
+                color: (reportCounts[record._id] || 0) > 0 ? COLORS.red : COLORS.textLight,
+              }}
+            >
+              {reportCounts[record._id] || 0}
+            </span>
+            <StatusPill status={record.status || "active"} />
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onBan(record);
+                }}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 10,
+                  border: "none",
+                  background: COLORS.redBg,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <DeleteOutlined style={{ fontSize: 13, color: COLORS.red }} />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onView(record);
+                }}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 10,
+                  border: "none",
+                  background: "rgba(127,0,253,0.1)",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <EyeOutlined style={{ fontSize: 13, color: COLORS.purple }} />
+              </button>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  </>
+);
+
+const PostsView = ({ posts, keyword, setKeyword, onSearch, onRemove, onView }) => (
+  <>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <h1 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textPrimary, margin: 0 }}>Quản lý bài viết</h1>
+      <SearchInput placeholder="Tìm bài viết..." value={keyword} onChange={setKeyword} onSearch={onSearch} />
+    </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 20 }}>
+      {posts.length === 0 ? (
+        <div style={{ padding: 32, textAlign: "center", color: COLORS.textMuted }}>Chưa có dữ liệu bài viết</div>
+      ) : (
+        posts.map((post) => (
+          <div
+            key={post._id}
+            onDoubleClick={() => onView(post)}
+            style={{
+              background: "#ffffff",
+              border: `0.8px solid ${COLORS.borderLight}`,
+              borderRadius: 16,
+              boxShadow: cardShadow,
+              padding: 16.8,
+              cursor: "pointer",
+            }}
+          >
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <Avatar size={32} src={getMediaUrl(post.author?.avatar)} style={{ backgroundColor: COLORS.purple, flexShrink: 0 }}>
+                {getInitials(post.author?.name || post.author?.email)}
+              </Avatar>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.textPrimary }}>
+                    {post.author?.name || post.author?.email || "Không rõ"}
+                  </span>
+                  <span style={{ fontSize: 12, color: COLORS.textLight }}>{timeAgo(post.createdAt)}</span>
+                  <div style={{ marginLeft: "auto" }}>
+                    <StatusPill status={post.status === "removed" ? "banned" : "active"} />
+                  </div>
+                </div>
+                <p
+                  style={{
+                    margin: "4px 0 0",
+                    fontSize: 14,
+                    color: COLORS.textGray,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {post.content || "(Không có nội dung)"}
+                </p>
+                <div style={{ marginTop: 8, fontSize: 12, color: COLORS.textLight }}>
+                  {(post.stats?.reactions || 0).toLocaleString("vi-VN")} lượt thích · {(post.stats?.comments || 0).toLocaleString("vi-VN")} bình luận
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(post._id);
+                }}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 10,
+                  border: "none",
+                  background: COLORS.redBg,
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                <DeleteOutlined style={{ fontSize: 14, color: COLORS.red }} />
+              </button>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  </>
+);
+
+const ReportsView = ({ reports, onResolve }) => (
+  <>
+    <h1 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textPrimary, margin: 0 }}>Báo cáo vi phạm</h1>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 20 }}>
+      {reports.length === 0 ? (
+        <div style={{ padding: 32, textAlign: "center", color: COLORS.textMuted }}>Chưa có báo cáo</div>
+      ) : (
+        reports.map((report) => {
+          const pending = ["open", "reviewing"].includes(report.status);
+          return (
+            <div
+              key={report._id}
+              style={{
+                background: "#ffffff",
+                border: `0.8px solid ${pending ? "#fee685" : COLORS.borderLight}`,
+                borderRadius: 16,
+                boxShadow: cardShadow,
+                padding: 16.8,
+              }}
+            >
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 14,
+                    background: pending ? COLORS.orangeBg : "#dbeafe",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <FlagOutlined style={{ fontSize: 16, color: pending ? COLORS.orange : "#2563eb" }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.textPrimary }}>
+                      {report.targetType === "user" ? "Người dùng" : "Bài viết"} · {report.reason}
+                    </span>
+                    <StatusPill status={report.status || "open"} />
+                  </div>
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: COLORS.textGray }}>
+                    <strong>Lý do:</strong> {report.reason}
+                  </p>
+                  <p style={{ margin: "2px 0 0", fontSize: 12, color: COLORS.textLight }}>
+                    Báo cáo bởi <strong>{report.reporter?.name || report.reporter?.email || "Ẩn danh"}</strong> · {timeAgo(report.createdAt)}
+                  </p>
+                </div>
+                {pending && (
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => onResolve(report._id, "resolved")}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "6px 12px",
+                        borderRadius: 10,
+                        border: "none",
+                        background: COLORS.greenBg,
+                        color: COLORS.green,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <CheckOutlined /> Xử lý
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onResolve(report._id, "rejected")}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "6px 12px",
+                        borderRadius: 10,
+                        border: "none",
+                        background: "#f3f4f6",
+                        color: COLORS.textMuted,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <CloseOutlined /> Bỏ qua
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  </>
+);
+
+const HistoryView = ({ logs }) => (
+  <>
+    <h1 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textPrimary, margin: 0 }}>Lịch sử hệ thống</h1>
+    <p style={{ margin: "8px 0 0", fontSize: 14, color: COLORS.textMuted }}>
+      Nhật ký các hoạt động quản trị và xác thực trên hệ thống.
+    </p>
+    <div
+      style={{
+        marginTop: 20,
+        background: "#ffffff",
+        border: `0.8px solid ${COLORS.borderLight}`,
+        borderRadius: 16,
+        boxShadow: "0px 1px 3px rgba(0,0,0,0.1), 0px 1px 2px -1px rgba(0,0,0,0.1)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.2fr 1fr 0.8fr 1fr",
+          gap: 8,
+          padding: "20px 16px",
+          background: COLORS.bgPage,
+          borderBottom: `0.8px solid ${COLORS.borderLight}`,
+          fontSize: 12,
+          fontWeight: 700,
+          color: COLORS.textMuted,
+          textTransform: "uppercase",
+          letterSpacing: 0.3,
+        }}
+      >
+        <span>Hành động</span>
+        <span>Người thực hiện</span>
+        <span>Đối tượng</span>
+        <span>Thời gian</span>
+      </div>
+      {logs.length === 0 ? (
+        <div style={{ padding: 32, textAlign: "center", color: COLORS.textMuted }}>Chưa có bản ghi</div>
+      ) : (
+        logs.map((log) => (
+          <div
+            key={log._id}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1.2fr 1fr 0.8fr 1fr",
+              gap: 8,
+              padding: "14px 16px",
+              alignItems: "center",
+              borderBottom: `0.8px solid ${COLORS.borderLight}`,
+            }}
+          >
+            <span style={{ fontSize: 14, fontWeight: 500, color: COLORS.textPrimary }}>{formatAction(log.action)}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <Avatar size={28} style={{ backgroundColor: COLORS.purple, flexShrink: 0, fontSize: 11 }}>
+                {getInitials(log.actor?.name || log.actor?.email || "H")}
+              </Avatar>
+              <span style={{ fontSize: 13, color: COLORS.textGray, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {log.actor?.name || log.actor?.email || "Hệ thống"}
+              </span>
+            </div>
+            <span style={{ fontSize: 12, color: COLORS.textLight }}>{formatTarget(log)}</span>
+            <span style={{ fontSize: 12, color: COLORS.textLight }}>{formatDateTime(log.createdAt)}</span>
+          </div>
+        ))
+      )}
+    </div>
+  </>
+);
 
 const AdminPage = () => {
   const [loading, setLoading] = useState(true);
@@ -160,25 +834,21 @@ const AdminPage = () => {
   const [posts, setPosts] = useState([]);
   const [reports, setReports] = useState([]);
   const [logs, setLogs] = useState([]);
-  const [activeTab, setActiveTab] = useState("users");
-
-  // Modal states
+  const [activeTab, setActiveTab] = useState("overview");
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedPost, setSelectedPost] = useState(null);
-  const [selectedReport, setSelectedReport] = useState(null);
   const [userModalVisible, setUserModalVisible] = useState(false);
   const [postModalVisible, setPostModalVisible] = useState(false);
-  const [reportModalVisible, setReportModalVisible] = useState(false);
 
-  const loadData = async () => {
+  const loadData = async (searchKeyword = keyword) => {
     try {
       setLoading(true);
       const [dashboardRes, usersRes, postsRes, reportsRes, logsRes] = await Promise.all([
         getAdminDashboardApi(),
-        getAdminUsersApi({ q: keyword, limit: 8 }),
-        getAdminPostsApi({ q: keyword, limit: 8 }),
-        getAdminReportsApi({ limit: 8 }),
-        getAdminLogsApi({ limit: 8 }),
+        getAdminUsersApi({ q: searchKeyword, limit: 20 }),
+        getAdminPostsApi({ q: searchKeyword, limit: 20 }),
+        getAdminReportsApi({ limit: 20 }),
+        getAdminLogsApi({ limit: 30 }),
       ]);
 
       if (dashboardRes?.EC !== 0) {
@@ -198,39 +868,45 @@ const AdminPage = () => {
   };
 
   useEffect(() => {
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadData("");
   }, []);
 
-  const handleSearch = () => {
-    loadData();
-  };
+  const metrics = useMemo(() => {
+    const base = dashboard?.metrics || {};
+    const openReports = reports.filter((r) => ["open", "reviewing"].includes(r.status)).length || base.openReports || 0;
+    const flaggedPosts = reports.filter((r) => r.targetType === "post" && ["open", "reviewing"].includes(r.status)).length;
+    return {
+      ...base,
+      openReports,
+      flaggedPosts,
+      suspendedUsers: base.suspendedUsers || users.filter((u) => u.status === "suspended").length,
+    };
+  }, [dashboard, reports, users]);
 
-  // Modal handlers
-  const handleUserDoubleClick = (user) => {
-    setSelectedUser(user);
-    setUserModalVisible(true);
-  };
+  const reportCounts = useMemo(() => {
+    const counts = {};
+    reports.forEach((report) => {
+      const targetId = report.targetId || report.target?._id;
+      if (targetId) counts[targetId] = (counts[targetId] || 0) + 1;
+    });
+    return counts;
+  }, [reports]);
 
-  const handlePostDoubleClick = (post) => {
-    setSelectedPost(post);
-    setPostModalVisible(true);
-  };
+  const sidebarBadges = useMemo(
+    () => ({
+      users: users.filter((u) => u.status === "suspended" || u.status === "banned").length,
+      reports: metrics.openReports || 0,
+    }),
+    [users, metrics.openReports],
+  );
 
-  const handleReportDoubleClick = (report) => {
-    setSelectedReport(report);
-    setReportModalVisible(true);
-  };
+  const handleSearch = () => loadData(keyword);
 
   const handleUserAction = async (userId, action) => {
     try {
-      if (action === "ban") {
-        await banAdminUserApi(userId, { reason: "Vi phạm chính sách cộng đồng" });
-      } else if (action === "unban") {
-        await unbanAdminUserApi(userId);
-      } else {
-        await updateAdminUserStatusApi(userId, action);
-      }
+      if (action === "ban") await banAdminUserApi(userId, { reason: "Vi phạm chính sách cộng đồng" });
+      else if (action === "unban") await unbanAdminUserApi(userId);
+      else await updateAdminUserStatusApi(userId, action);
       message.success("Đã cập nhật trạng thái người dùng.");
       await loadData();
     } catch (error) {
@@ -258,330 +934,106 @@ const AdminPage = () => {
     }
   };
 
-  const userColumns = useMemo(
-    () => [
-      {
-        title: "Người dùng",
-        dataIndex: "name",
-        key: "name",
-        render: (_, record) => (
-          <Space direction="vertical" size={0}>
-            <Typography.Text strong>{record.name || "Chưa đặt tên"}</Typography.Text>
-            <Typography.Text type="secondary">{record.email}</Typography.Text>
-          </Space>
-        ),
-      },
-      {
-        title: "Quyền",
-        dataIndex: "role",
-        key: "role",
-        render: (value) => <Tag color={roleColors[value] || "default"}>{value}</Tag>,
-      },
-      {
-        title: "Trạng thái",
-        dataIndex: "status",
-        key: "status",
-        render: (value) => <Tag color={statusColors[value] || "default"}>{value}</Tag>,
-      },
-      {
-        title: "Hành động",
-        key: "actions",
-        render: (_, record) => (
-          <Space wrap>
-            <Button size="small" onClick={() => handleUserAction(record._id, "active")}>
-              Mở lại
-            </Button>
-            <Button size="small" onClick={() => handleUserAction(record._id, "suspended")}>
-              Tạm khóa
-            </Button>
-            {record.status === "banned" ? (
-              <Button size="small" danger onClick={() => handleUserAction(record._id, "unban")}>
-                Gỡ ban
-              </Button>
-            ) : (
-              <Button size="small" danger onClick={() => handleUserAction(record._id, "ban")}>
-                Ban
-              </Button>
-            )}
-          </Space>
-        ),
-      },
-    ],
-    [],
-  );
-
-  const postColumns = useMemo(
-    () => [
-      {
-        title: "Bài viết",
-        dataIndex: "content",
-        key: "content",
-        render: (value) => <Typography.Paragraph ellipsis={{ rows: 2 }}>{value || "(Không có nội dung)"}</Typography.Paragraph>,
-      },
-      {
-        title: "Tác giả",
-        dataIndex: "author",
-        key: "author",
-        render: (author) => author?.name || author?.email || "Không rõ",
-      },
-      {
-        title: "Tương tác",
-        key: "stats",
-        render: (_, record) => `${record.stats?.reactions || 0} react / ${record.stats?.comments || 0} bình luận`,
-      },
-      {
-        title: "Hành động",
-        key: "actions",
-        render: (_, record) => (
-          <Popconfirm
-            title="Gỡ bài viết này?"
-            description="Thao tác này sẽ xóa bài khỏi hệ thống."
-            onConfirm={() => handleRemovePost(record._id)}
-          >
-            <Button size="small" danger>
-              Gỡ bài
-            </Button>
-          </Popconfirm>
-        ),
-      },
-    ],
-    [],
-  );
-
-  const reportColumns = useMemo(
-    () => [
-      { title: "Đối tượng", dataIndex: "targetType", key: "targetType" },
-      { title: "Lý do", dataIndex: "reason", key: "reason" },
-      {
-        title: "Reporter",
-        dataIndex: "reporter",
-        key: "reporter",
-        render: (reporter) => reporter?.name || reporter?.email || "Ẩn danh",
-      },
-      {
-        title: "Trạng thái",
-        dataIndex: "status",
-        key: "status",
-        render: (value) => <Tag color={statusColors[value] || "default"}>{value}</Tag>,
-      },
-      {
-        title: "Hành động",
-        key: "actions",
-        render: (_, record) => (
-          <Space wrap>
-            <Button size="small" type="primary" onClick={() => handleResolveReport(record._id, "resolved")}>
-              Duyệt
-            </Button>
-            <Button size="small" onClick={() => handleResolveReport(record._id, "rejected")}>
-              Bỏ qua
-            </Button>
-          </Space>
-        ),
-      },
-    ],
-    [],
-  );
-
-  const logColumns = useMemo(
-    () => [
-      { title: "Hành động", dataIndex: "action", key: "action" },
-      {
-        title: "Người thực hiện",
-        dataIndex: "actor",
-        key: "actor",
-        render: (actor) => actor?.name || actor?.email || "Hệ thống",
-      },
-      { title: "Đối tượng", dataIndex: "targetType", key: "targetType" },
-      {
-        title: "Thời gian",
-        dataIndex: "createdAt",
-        key: "createdAt",
-        render: (value) => formatDate(value),
-      },
-    ],
-    [],
-  );
-
-  const tabContent = {
-    users: (
-      <Table
-        rowKey="_id"
-        columns={userColumns}
-        dataSource={users}
-        pagination={false}
-        locale={{ emptyText: <Empty description="Chưa có dữ liệu user" /> }}
-        onRow={(record) => ({
-          onDoubleClick: () => handleUserDoubleClick(record),
-          style: { cursor: 'pointer' }
-        })}
-      />
-    ),
-    posts: (
-      <Table
-        rowKey="_id"
-        columns={postColumns}
-        dataSource={posts}
-        pagination={false}
-        locale={{ emptyText: <Empty description="Chưa có dữ liệu bài viết" /> }}
-        onRow={(record) => ({
-          onDoubleClick: () => handlePostDoubleClick(record),
-          style: { cursor: 'pointer' }
-        })}
-      />
-    ),
-    reports: (
-      <Table
-        rowKey="_id"
-        columns={reportColumns}
-        dataSource={reports}
-        pagination={false}
-        locale={{ emptyText: <Empty description="Chưa có báo cáo" /> }}
-        onRow={(record) => ({
-          onDoubleClick: () => handleReportDoubleClick(record),
-          style: { cursor: 'pointer' }
-        })}
-      />
-    ),
-    logs: <Table rowKey="_id" columns={logColumns} dataSource={logs} pagination={false} locale={{ emptyText: <Empty description="Chưa có bản ghi" /> }} />,
-  };
-
   if (loading && !dashboard) {
     return (
-      <div className="flex min-h-[80vh] items-center justify-center bg-gray-50">
+      <div style={{ display: "flex", minHeight: "60vh", alignItems: "center", justifyContent: "center" }}>
         <Spin size="large" />
       </div>
     );
   }
 
-  const metrics = dashboard?.metrics || {};
+  const tabContent = {
+    overview: <OverviewView metrics={metrics} posts={posts} setActiveTab={setActiveTab} />,
+    logs: <HistoryView logs={logs} />,
+    users: (
+      <UsersView
+        users={users}
+        keyword={keyword}
+        setKeyword={setKeyword}
+        onSearch={handleSearch}
+        reportCounts={reportCounts}
+        onBan={(user) => handleUserAction(user._id, user.status === "banned" ? "unban" : "ban")}
+        onSuspend={(user) => handleUserAction(user._id, "suspended")}
+        onView={(user) => {
+          setSelectedUser(user);
+          setUserModalVisible(true);
+        }}
+      />
+    ),
+    posts: (
+      <PostsView
+        posts={posts}
+        keyword={keyword}
+        setKeyword={setKeyword}
+        onSearch={handleSearch}
+        onRemove={handleRemovePost}
+        onView={(post) => {
+          setSelectedPost(post);
+          setPostModalVisible(true);
+        }}
+      />
+    ),
+    reports: <ReportsView reports={reports} onResolve={handleResolveReport} />,
+  };
 
   return (
     <>
-      <div style={{ display: 'flex', minHeight: '100vh', background: '#ffffff', width: '100%' }}>
-        {/* App Left Sidebar (267px, matches Figma) */}
-        <Sidebar />
-        
-        {/* Main Content (913px, matches Figma's Main Content) */}
-        <div style={{ width: 913, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-          {/* Admin Panel */}
-          <div style={{ display: 'flex', width: '100%' }}>
-            {/* Admin Sidebar (208px, matches Figma's Sidebar instance) */}
-            <AdminSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
-            
-            {/* Admin Main Content Container (705px, matches Figma) */}
-            <div style={{ width: 705, padding: 24 }}>
-              {/* Header (matches Figma's Heading 2) */}
-              <div style={{ marginBottom: 28 }}>
-                <h1 style={{
-                  fontSize: 24,
-                  fontWeight: 800,
-                  color: '#111827',
-                  margin: 0
-                }}>Tổng quan hệ thống</h1>
-              </div>
-
-              {/* Stat Cards Container (matches Figma's Container:margin) */}
-              <div style={{ marginBottom: 28 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-                  <StatCard 
-                    icon={UserOutlined} 
-                    title="Người dùng" 
-                    value={metrics.totalUsers || 0} 
-                    change="+12% tuần"
-                    color="#7F00FD"
-                  />
-                  <StatCard 
-                    icon={FileTextOutlined} 
-                    title="Bài viết" 
-                    value={metrics.totalPosts || 0} 
-                    change="+8% tuần"
-                    color="#1890FF"
-                  />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <StatCard 
-                    icon={WarningOutlined} 
-                    title="Báo cáo" 
-                    value={metrics.openReports || 0} 
-                    change="-3 hôm nay"
-                    color="#FAAD14"
-                  />
-                  <StatCard 
-                    icon={BarChartOutlined} 
-                    title="Hoạt động/ngày" 
-                    value={metrics.activeUsers || 0} 
-                    change="+5% tuần"
-                    color="#52C41A"
-                  />
-                </div>
-              </div>
-
-              {/* Chart Placeholder (matches Figma's MiniBarChart) */}
-              <div style={{
-                background: '#ffffff',
-                borderRadius: 16,
-                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                padding: 20.8,
-                marginBottom: 24
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-                  <BarChartOutlined style={{ color: '#4b5563', fontSize: 16 }} />
-                  <span style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}>Bài viết theo tháng</span>
-                </div>
-                <div style={{
-                  height: 128,
-                  background: '#f9fafb',
-                  borderRadius: 12,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#9ca3af',
-                  fontSize: 14
-                }}>
-                  Biểu đồ sẽ hiển thị ở đây
-                </div>
-              </div>
-
-              {/* Search Bar and Table */}
-              <div>
-                {/* Search Bar */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                  <Input.Search
-                    allowClear
-                    placeholder="Tìm theo tên, email hoặc nội dung"
-                    value={keyword}
-                    onChange={(event) => setKeyword(event.target.value)}
-                    onSearch={handleSearch}
-                    style={{ width: 320 }}
-                  />
-                  <Typography.Text type="secondary" style={{ fontSize: 14 }}>
-                    Cập nhật gần nhất: {formatDate(new Date().toISOString())}
-                  </Typography.Text>
-                </div>
-                {/* Table */}
-                {tabContent[activeTab]}
-              </div>
-            </div>
-          </div>
-        </div>
+      <div style={{ display: "flex", minHeight: "100vh", width: "100%" }}>
+        <AdminSidebar activeTab={activeTab} setActiveTab={setActiveTab} badges={sidebarBadges} />
+        <main
+          style={{
+            flex: 1,
+            background: COLORS.bgPage,
+            padding: 24,
+            minHeight: "100vh",
+            boxSizing: "border-box",
+            minWidth: 0,
+          }}
+        >
+          {loading ? <Spin /> : tabContent[activeTab]}
+        </main>
       </div>
 
-      {/* User Detail Modal */}
       <Modal
         title="Chi tiết người dùng"
         open={userModalVisible}
-        onCancel={() => { setUserModalVisible(false); setSelectedUser(null); }}
+        onCancel={() => {
+          setUserModalVisible(false);
+          setSelectedUser(null);
+        }}
         footer={[
-          <Button key="close" onClick={() => { setUserModalVisible(false); setSelectedUser(null); }}>
+          <Button key="suspend" onClick={() => selectedUser && handleUserAction(selectedUser._id, "suspended")}>
+            Tạm khóa
+          </Button>,
+          <Button
+            key="ban"
+            danger
+            onClick={() =>
+              selectedUser &&
+              handleUserAction(selectedUser._id, selectedUser.status === "banned" ? "unban" : "ban")
+            }
+          >
+            {selectedUser?.status === "banned" ? "Gỡ ban" : "Ban"}
+          </Button>,
+          <Button
+            key="close"
+            type="primary"
+            onClick={() => {
+              setUserModalVisible(false);
+              setSelectedUser(null);
+            }}
+          >
             Đóng
-          </Button>
+          </Button>,
         ]}
         width={600}
       >
         {selectedUser && (
-          <div className="py-4">
-            <div className="flex items-center gap-4 mb-6">
-              <Avatar size={80} icon={<UserOutlined />} src={getMediaUrl(selectedUser.avatar)} />
+          <div style={{ padding: "16px 0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
+              <Avatar size={80} src={getMediaUrl(selectedUser.avatar)} style={{ backgroundColor: COLORS.purple }}>
+                {getInitials(selectedUser.name || selectedUser.email)}
+              </Avatar>
               <div>
                 <Typography.Title level={4} style={{ margin: 0 }}>
                   {selectedUser.name || "Chưa đặt tên"}
@@ -591,98 +1043,92 @@ const AdminPage = () => {
             </div>
             <Descriptions bordered column={1}>
               <Descriptions.Item label="ID">{selectedUser._id}</Descriptions.Item>
-              <Descriptions.Item label="Vai trò">
-                <Tag color={roleColors[selectedUser.role] || "default"}>{selectedUser.role}</Tag>
-              </Descriptions.Item>
+              <Descriptions.Item label="Quyền">{roleLabels[selectedUser.role] || selectedUser.role}</Descriptions.Item>
               <Descriptions.Item label="Trạng thái">
-                <Tag color={statusColors[selectedUser.status] || "default"}>{selectedUser.status}</Tag>
+                <StatusPill status={selectedUser.status || "active"} />
               </Descriptions.Item>
               <Descriptions.Item label="Ngày tạo">{formatDate(selectedUser.createdAt)}</Descriptions.Item>
-              {selectedUser.bio && <Descriptions.Item label="Giới thiệu">{selectedUser.bio}</Descriptions.Item>}
             </Descriptions>
           </div>
         )}
       </Modal>
 
-      {/* Post Detail Modal */}
       <Modal
         title="Chi tiết bài viết"
         open={postModalVisible}
-        onCancel={() => { setPostModalVisible(false); setSelectedPost(null); }}
+        onCancel={() => {
+          setPostModalVisible(false);
+          setSelectedPost(null);
+        }}
         footer={[
-          <Button key="close" onClick={() => { setPostModalVisible(false); setSelectedPost(null); }}>
+          <Button
+            key="remove"
+            danger
+            onClick={async () => {
+              if (selectedPost) {
+                await handleRemovePost(selectedPost._id);
+                setPostModalVisible(false);
+                setSelectedPost(null);
+              }
+            }}
+          >
+            Gỡ bài
+          </Button>,
+          <Button
+            key="close"
+            type="primary"
+            onClick={() => {
+              setPostModalVisible(false);
+              setSelectedPost(null);
+            }}
+          >
             Đóng
-          </Button>
+          </Button>,
         ]}
         width={600}
       >
         {selectedPost && (
-          <div className="py-4">
-            <div className="flex items-center gap-3 mb-4">
-              <Avatar size={48} icon={<UserOutlined />} src={getMediaUrl(selectedPost.author?.avatar)} />
+          <div style={{ padding: "16px 0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+              <Avatar size={48} src={getMediaUrl(selectedPost.author?.avatar)} style={{ backgroundColor: COLORS.purple }}>
+                {getInitials(selectedPost.author?.name || selectedPost.author?.email)}
+              </Avatar>
               <div>
-                <Typography.Text strong>{selectedPost.author?.name || selectedPost.author?.email || "Không rõ"}</Typography.Text>
-                <div className="text-gray-400 text-sm">{formatDate(selectedPost.createdAt)}</div>
+                <Typography.Text strong>
+                  {selectedPost.author?.name || selectedPost.author?.email || "Không rõ"}
+                </Typography.Text>
+                <div style={{ color: COLORS.textLight, fontSize: 12 }}>{formatDateTime(selectedPost.createdAt)}</div>
               </div>
             </div>
-            <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 16 }}>
-              {selectedPost.content}
+            <Typography.Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 16 }}>
+              {selectedPost.content || "(Không có nội dung)"}
             </Typography.Paragraph>
-            {selectedPost.media && selectedPost.media.length > 0 && (
-              <div className="grid grid-cols-2 gap-2 mb-4">
+            {selectedPost.media?.length > 0 && (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 8,
+                  marginBottom: 16,
+                }}
+              >
                 {selectedPost.media.map((url, idx) => (
-                  <img key={idx} src={getMediaUrl(url)} alt={`Media ${idx + 1}`} className="rounded-lg w-full h-40 object-cover" />
+                  <img
+                    key={idx}
+                    src={getMediaUrl(url)}
+                    alt={`Media ${idx + 1}`}
+                    style={{ borderRadius: 8, width: "100%", height: 160, objectFit: "cover" }}
+                  />
                 ))}
               </div>
             )}
             <Descriptions bordered column={1}>
+              <Descriptions.Item label="ID">{selectedPost._id}</Descriptions.Item>
               <Descriptions.Item label="Số lượt thích">{selectedPost.stats?.reactions || 0}</Descriptions.Item>
               <Descriptions.Item label="Số bình luận">{selectedPost.stats?.comments || 0}</Descriptions.Item>
-              <Descriptions.Item label="Trạng thái">{selectedPost.status || "Công khai"}</Descriptions.Item>
-            </Descriptions>
-          </div>
-        )}
-      </Modal>
-
-      {/* Report Detail Modal */}
-      <Modal
-        title="Chi tiết báo cáo"
-        open={reportModalVisible}
-        onCancel={() => { setReportModalVisible(false); setSelectedReport(null); }}
-        footer={[
-          <Button key="reject" onClick={() => {
-            if (selectedReport) handleResolveReport(selectedReport._id, 'rejected');
-            setReportModalVisible(false);
-            setSelectedReport(null);
-          }}>
-            Bỏ qua
-          </Button>,
-          <Button key="resolve" type="primary" onClick={() => {
-            if (selectedReport) handleResolveReport(selectedReport._id, 'resolved');
-            setReportModalVisible(false);
-            setSelectedReport(null);
-          }}>
-            Duyệt
-          </Button>,
-        ]}
-        width={600}
-      >
-        {selectedReport && (
-          <div className="py-4">
-            <Descriptions bordered column={1}>
-              <Descriptions.Item label="ID báo cáo">{selectedReport._id}</Descriptions.Item>
-              <Descriptions.Item label="Đối tượng">{selectedReport.targetType}</Descriptions.Item>
-              <Descriptions.Item label="Lý do">{selectedReport.reason}</Descriptions.Item>
-              <Descriptions.Item label="Người báo cáo">
-                {selectedReport.reporter?.name || selectedReport.reporter?.email || "Ẩn danh"}
-              </Descriptions.Item>
               <Descriptions.Item label="Trạng thái">
-                <Tag color={statusColors[selectedReport.status] || "default"}>{selectedReport.status}</Tag>
+                <StatusPill status={selectedPost.status === "removed" ? "banned" : "active"} />
               </Descriptions.Item>
-              <Descriptions.Item label="Ngày tạo">{formatDate(selectedReport.createdAt)}</Descriptions.Item>
-              {selectedReport.description && (
-                <Descriptions.Item label="Mô tả chi tiết">{selectedReport.description}</Descriptions.Item>
-              )}
             </Descriptions>
           </div>
         )}
