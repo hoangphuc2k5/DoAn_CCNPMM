@@ -352,9 +352,6 @@ const SearchPage = () => {
         renderItem={(item) => (
           <List.Item
             className="user-result-item"
-            actions={[
-              <Button key="join" type="primary" size="small" className="btn-search-purple-solid">
-                Tham gia
             style={{ cursor: "pointer" }}
             onClick={() => navigate(`/groups/${item._id}`)}
             actions={[
@@ -362,6 +359,7 @@ const SearchPage = () => {
                 key="join"
                 type="primary"
                 size="small"
+                className="btn-search-purple-solid"
                 onClick={(event) => {
                   event.stopPropagation();
                   navigate(`/groups/${item._id}`);

@@ -34,6 +34,7 @@ import {
   getNotificationTargetUrl,
   showLocalNotification,
 } from "../../util/notification";
+import appLogo from "../../Logo/logo.jpg";
 
 const notificationText = {
   post_mention: "đã nhắc đến bạn trong một bài viết",
@@ -276,14 +277,14 @@ const Sidebar = () => {
     message.success("Đăng xuất thành công");
   };
 
-  const showNotSupportedMessage = (featureName) => {
-    message.info(`Tính năng "${featureName}" hiện chưa được hỗ trợ`);
-  };
-
   // Active Key determination based on pathname
   const activeKey = useMemo(() => {
     const path = location.pathname;
     if (path === "/" || path === "") return "home";
+    if (path.startsWith("/admin")) return "admin";
+    if (path.startsWith("/saved")) return "saved";
+    if (path.startsWith("/groups")) return "groups";
+    if (path.startsWith("/account/security")) return "security";
     if (path.startsWith("/search")) return "search";
     if (path.startsWith("/notifications")) return "notifications";
     if (path.startsWith("/chat")) return "chat";
@@ -297,9 +298,9 @@ const Sidebar = () => {
     <>
       <aside className="app-sidebar">
         {/* Brand/Logo Section */}
-        <div>
+        <div className="sidebar-main">
           <Link to="/" className="sidebar-logo">
-            <span className="sidebar-logo-icon">T</span>
+            <img src={appLogo} alt="Tegram" className="sidebar-logo-icon" />
             <span className="sidebar-logo-text">Tegram</span>
           </Link>
 
@@ -347,13 +348,13 @@ const Sidebar = () => {
                 </Link>
 
                 {/* Đã lưu */}
-                <button
-                  onClick={() => showNotSupportedMessage("Đã lưu")}
-                  className="sidebar-item"
+                <Link
+                  to="/saved"
+                  className={`sidebar-item ${activeKey === "saved" ? "active" : ""}`}
                 >
                   <BookOutlined />
                   <span>Đã lưu</span>
-                </button>
+                </Link>
 
                 {/* Trang cá nhân */}
                 <Link
@@ -365,22 +366,31 @@ const Sidebar = () => {
                 </Link>
 
                 {/* Nhóm */}
-                <button
-                  onClick={() => showNotSupportedMessage("Nhóm")}
-                  className="sidebar-item"
+                <Link
+                  to="/groups"
+                  className={`sidebar-item ${activeKey === "groups" ? "active" : ""}`}
                 >
                   <TeamOutlined />
                   <span>Nhóm</span>
-                </button>
+                </Link>
 
                 {/* Cài đặt */}
-                <button
-                  onClick={() => showNotSupportedMessage("Cài đặt")}
-                  className="sidebar-item"
+                <Link
+                  to="/account/security"
+                  className={`sidebar-item ${activeKey === "security" ? "active" : ""}`}
                 >
                   <SettingOutlined />
-                  <span>Cài đặt</span>
-                </button>
+                  <span>Bảo mật</span>
+                </Link>
+                {["admin", "super_admin"].includes(String(user?.role || "").toLowerCase()) ? (
+                  <Link
+                    to="/admin"
+                    className={`sidebar-item ${activeKey === "admin" ? "active" : ""}`}
+                  >
+                    <CheckCircleOutlined />
+                    <span>Admin Panel</span>
+                  </Link>
+                ) : null}
               </>
             )}
           </nav>
@@ -408,7 +418,7 @@ const Sidebar = () => {
                   </span>
                 </div>
               </div>
-              <button className="sidebar-logout-btn" onClick={handleLogout}>
+              <button className="sidebar-logout-btn" type="button" onClick={handleLogout}>
                 <LogoutOutlined />
                 <span>Đăng xuất</span>
               </button>

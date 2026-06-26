@@ -1,42 +1,31 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import { useNavigate } from "react-router-dom";
 import AuthLayout from "../components/auth/AuthLayout";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
-import { registerThunk } from "../Redux/authSlice";
+import { fetchCaptchaThunk, registerThunk } from "../Redux/authSlice";
 
 const RegisterPage = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { loading, error } = useSelector((state) => state.auth);
+  const { loading, error, captcha } = useSelector((state) => state.auth);
   const [formState, setFormState] = useState({
     name: "",
     email: "",
     password: "",
-    captcha: "",
+    captchaAnswer: "",
   });
   const [localError, setLocalError] = useState("");
+
+  useEffect(() => {
+    dispatch(fetchCaptchaThunk());
+  }, [dispatch]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
     setFormState((prev) => ({ ...prev, [name]: value }));
   };
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    setLocalError("");
-    if (!formState.name || !formState.email || !formState.password) {
-      setLocalError("Vui lòng điền đầy đủ thông tin.");
-      return;
-    }
-  const isCaptchaValid = formState.captcha.trim() === "13";
-  const isFormReady =
-    formState.name.trim() &&
-    formState.email.trim() &&
-    formState.password &&
-    isCaptchaValid;
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -47,8 +36,7 @@ const RegisterPage = () => {
       return;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formState.email.trim())) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formState.email.trim())) {
       setLocalError("Email không đúng định dạng.");
       return;
     }
@@ -58,9 +46,8 @@ const RegisterPage = () => {
       return;
     }
 
-    const result = await dispatch(registerThunk(formState));
-    if (!isCaptchaValid) {
-      setLocalError("Hãy nhập đúng kết quả phép tính để tiếp tục.");
+    if (!formState.captchaAnswer.trim()) {
+      setLocalError("Vui lòng nhập CAPTCHA để tiếp tục.");
       return;
     }
 
@@ -69,18 +56,21 @@ const RegisterPage = () => {
         name: formState.name.trim(),
         email: formState.email.trim(),
         password: formState.password,
+        captchaAnswer: formState.captchaAnswer,
+        captchaToken: captcha?.challengeToken,
       }),
     );
 
     if (registerThunk.fulfilled.match(result)) {
-      navigate("/login");
+      navigate(`/verify-email?email=${encodeURIComponent(formState.email.trim())}`);
     }
   };
 
   return (
     <AuthLayout
       title="Tạo tài khoản mới"
-      subtitle="Đăng ký để bắt đầu sử dụng mạng xã hội mini với feed, tương tác và thông báo."
+      subtitle="Đăng ký để bắt đầu sử dụng feed, chat, thông báo và khu vực cộng đồng."
+      showGoogleButton={false}
       footer={
         <span>
           Đã có tài khoản?{" "}
@@ -92,7 +82,7 @@ const RegisterPage = () => {
     >
       <form onSubmit={handleSubmit} className="space-y-5">
         <Input
-          label="Ho va ten"
+          label="Họ và tên"
           name="name"
           value={formState.name}
           onChange={handleChange}
@@ -100,19 +90,6 @@ const RegisterPage = () => {
         />
         <Input
           label="Email"
-    <AuthLayout activeTab="register" formLabel="--- Đăng ký ---">
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <Input
-          label="Họ và tên"
-          hideLabel
-          name="name"
-          value={formState.name}
-          onChange={handleChange}
-          placeholder="Họ và tên"
-        />
-        <Input
-          label="Email"
-          hideLabel
           name="email"
           type="email"
           value={formState.email}
@@ -121,17 +98,28 @@ const RegisterPage = () => {
         />
         <Input
           label="Mật khẩu"
-          placeholder="Email"
-        />
-        <Input
-          label="Mật khẩu"
-          hideLabel
           name="password"
           type="password"
           value={formState.password}
           onChange={handleChange}
-          placeholder="Nhập mật khẩu"
+          placeholder="Tối thiểu 6 ký tự"
         />
+        <div className="rounded-2xl border border-violet-200 bg-violet-50/60 px-4 py-4">
+          <div className="text-sm font-semibold text-slate-700">Xác nhận bạn không phải robot</div>
+          <div className="mt-3 flex items-center gap-3">
+            <div className="rounded-xl bg-white px-3 py-2 font-mono text-base font-bold text-slate-700 shadow-sm">
+              {captcha?.question || "Đang tải..."}
+            </div>
+            <input
+              type="text"
+              name="captchaAnswer"
+              value={formState.captchaAnswer}
+              onChange={handleChange}
+              placeholder="Kết quả"
+              className="h-11 w-28 rounded-xl border border-violet-200 px-3 text-sm outline-none"
+            />
+          </div>
+        </div>
         {localError || error ? (
           <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
             {localError || error}
@@ -147,42 +135,6 @@ const RegisterPage = () => {
             </Button>
           </Link>
         </div>
-          placeholder="Mật khẩu"
-        />
-
-        <div className="w-full rounded-[14px] border-[1.6px] border-[rgba(127,0,253,0.3)] bg-[#f9fafb] p-[17.6px]">
-          <div className="text-[12px] font-bold uppercase tracking-[0.3px] text-[#6a7282]">
-            Xác nhận bạn không phải robot
-          </div>
-
-          <div className="flex items-center gap-3 pt-2">
-            <div className="rounded-[10px] border border-[#e5e7eb] bg-white px-[12.8px] py-[8.8px] font-mono text-[16px] font-bold leading-6 text-[#364153]">
-              4 + 9 = ?
-            </div>
-            <input
-              type="text"
-              name="captcha"
-              value={formState.captcha}
-              onChange={handleChange}
-              placeholder="Kết quả"
-              className="h-[39.2px] w-24 rounded-[10px] border-[1.6px] border-[rgba(127,0,253,0.3)] bg-white px-[13.6px] text-[14px] text-[#111827] outline-none placeholder:text-[rgba(10,10,10,0.5)]"
-            />
-          </div>
-
-          <div className="pt-2 text-[12px] leading-4 text-[#99a1af]">
-            Nhập kết quả phép tính để xác nhận
-          </div>
-        </div>
-
-        {localError || error ? (
-          <div className="rounded-[14px] border border-[rgba(194,83,26,0.3)] bg-[rgba(194,83,26,0.08)] px-4 py-3 text-sm text-[#c2531a]">
-            {localError || error}
-          </div>
-        ) : null}
-
-        <Button type="submit" loading={loading} disabled={!isFormReady} className="w-full">
-          Tiếp tục →
-        </Button>
       </form>
     </AuthLayout>
   );

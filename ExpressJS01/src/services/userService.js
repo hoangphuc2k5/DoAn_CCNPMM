@@ -1,82 +1,349 @@
 require("dotenv").config();
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
+const axios = require("axios");
 const User = require("../models/user");
 const Block = require("../models/block");
+const DeviceSession = require("../models/deviceSession");
+const { sendEmail } = require("./emailService");
+const { writeAuditLog } = require("./auditService");
 
 const saltRounds = 10;
+const OTP_EXPIRE_MINUTES = 10;
 
-const createUserService = async (name, email, password) => {
+const normalizeRole = (role) => String(role || "user").toLowerCase();
+const normalizeStatus = (status) => String(status || "active").toLowerCase();
+const hashCode = (value = "") =>
+  crypto.createHash("sha256").update(String(value)).digest("hex");
+const createOtpCode = () => String(Math.floor(100000 + Math.random() * 900000));
+const addMinutes = (minutes) => new Date(Date.now() + minutes * 60 * 1000);
+
+const getDeviceId = (context = {}) =>
+  String(
+    context.deviceId ||
+      context.headers?.["x-device-id"] ||
+      context.headers?.["x-device"] ||
+      `${context.userAgent || "unknown-device"}::${context.ipAddress || "unknown-ip"}`,
+  );
+
+const createAccessToken = (user) =>
+  jwt.sign(
+    {
+      _id: user._id,
+      email: user.email,
+      name: user.name,
+      role: normalizeRole(user.role),
+      avatar: user.avatar,
+      status: normalizeStatus(user.status),
+    },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: process.env.JWT_EXPIRE || "1d",
+    },
+  );
+
+const createTempToken = (payload) =>
+  jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: "10m",
+  });
+
+const publicUser = (user) => ({
+  _id: user._id,
+  email: user.email,
+  name: user.name,
+  avatar: user.avatar,
+  coverPhoto: user.coverPhoto,
+  bio: user.bio,
+  role: normalizeRole(user.role),
+  status: normalizeStatus(user.status),
+  isEmailVerified: Boolean(user.isEmailVerified),
+  twoFactorEnabled: Boolean(user.twoFactorEnabled),
+  authProvider: user.authProvider || "local",
+});
+
+const sanitizeText = (value = "") =>
+  String(value)
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/[<>]/g, "")
+    .trim();
+
+const persistDeviceSession = async (user, context = {}) => {
+  const deviceId = getDeviceId(context);
+  await DeviceSession.findOneAndUpdate(
+    { user: user._id, deviceId },
+    {
+      user: user._id,
+      deviceId,
+      ipAddress: context.ipAddress || "",
+      userAgent: context.userAgent || "",
+      isActive: true,
+      lastSeenAt: new Date(),
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+  return deviceId;
+};
+
+const sendOtpEmail = async ({ to, code, purpose }) => {
+  const subjects = {
+    verify_email: "Ma xac thuc email Tegram",
+    reset_password: "Ma dat lai mat khau Tegram",
+    two_factor: "Ma xac minh 2 lop Tegram",
+  };
+
+  const labels = {
+    verify_email: "xac thuc email",
+    reset_password: "dat lai mat khau",
+    two_factor: "dang nhap 2 lop",
+  };
+
+  return sendEmail({
+    to,
+    subject: subjects[purpose] || "Ma OTP Tegram",
+    text: `Xin chao,\n\nMa OTP de ${labels[purpose] || "xac minh tai khoan"} cua ban la: ${code}\nMa co hieu luc trong ${OTP_EXPIRE_MINUTES} phut.\n\nNeu ban khong thuc hien thao tac nay, vui long bo qua email nay.`,
+  });
+};
+
+const sendVerificationCodeToUser = async (user) => {
+  const code = createOtpCode();
+  user.emailVerificationCodeHash = hashCode(code);
+  user.emailVerificationExpiresAt = addMinutes(OTP_EXPIRE_MINUTES);
+  await user.save();
+  await sendOtpEmail({ to: user.email, code, purpose: "verify_email" });
+};
+
+const sendResetCodeToUser = async (user) => {
+  const code = createOtpCode();
+  user.passwordResetCodeHash = hashCode(code);
+  user.passwordResetExpiresAt = addMinutes(OTP_EXPIRE_MINUTES);
+  await user.save();
+  await sendOtpEmail({ to: user.email, code, purpose: "reset_password" });
+};
+
+const sendTwoFactorCodeToUser = async (user) => {
+  const code = createOtpCode();
+  user.twoFactorCodeHash = hashCode(code);
+  user.twoFactorExpiresAt = addMinutes(OTP_EXPIRE_MINUTES);
+  await user.save();
+  await sendOtpEmail({ to: user.email, code, purpose: "two_factor" });
+};
+
+const issueLoginResult = async (user, context = {}) => {
+  user.failedLoginAttempts = 0;
+  user.lastLoginAt = new Date();
+  await user.save();
+  const deviceId = await persistDeviceSession(user, context);
+  const access_token = createAccessToken(user);
+
+  await writeAuditLog({
+    actor: user._id,
+    action: "auth.login.success",
+    targetType: "user",
+    targetId: String(user._id),
+    metadata: { deviceId },
+    ipAddress: context.ipAddress || "",
+    userAgent: context.userAgent || "",
+  });
+
+  return {
+    EC: 0,
+    access_token,
+    device_id: deviceId,
+    user: publicUser(user),
+  };
+};
+
+const createUserService = async (name, email, password, context = {}) => {
   try {
-    if (!name || !email || !password) {
-      return { EC: 1, EM: "Vui lòng nhập đầy đủ thông tin" };
+    const safeName = sanitizeText(name);
+    const safeEmail = String(email || "").trim().toLowerCase();
+
+    if (!safeName || !safeEmail || !password) {
+      return { EC: 1, EM: "Vui lòng nhập đầy đủ thông tin." };
     }
 
-    const user = await User.findOne({ email });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(safeEmail)) {
+      return { EC: 1, EM: "Email không đúng định dạng." };
+    }
+
+    if (password.length < 6) {
+      return { EC: 1, EM: "Mật khẩu phải có ít nhất 6 ký tự." };
+    }
+
+    const user = await User.findOne({ email: safeEmail, deletedAt: null });
     if (user) {
-      return { EC: 1, EM: "Email đã tồn tại" };
+      return { EC: 1, EM: "Email đã tồn tại." };
     }
 
     const hashPassword = await bcrypt.hash(password, saltRounds);
     const result = await User.create({
-      name,
-      email,
+      name: safeName,
+      email: safeEmail,
       password: hashPassword,
-      role: "User",
+      role: "user",
+      status: "active",
+      authProvider: "local",
+      isEmailVerified: false,
+    });
+
+    await sendVerificationCodeToUser(result);
+    await writeAuditLog({
+      actor: result._id,
+      action: "auth.register",
+      targetType: "user",
+      targetId: String(result._id),
+      ipAddress: context.ipAddress || "",
+      userAgent: context.userAgent || "",
     });
 
     return {
       EC: 0,
-      EM: "Đăng ký thành công",
-      data: {
-        _id: result._id,
-        name: result.name,
-        email: result.email,
-        role: result.role,
-      },
+      EM: "Đăng ký thành công. OTP xác thực email đã được gửi.",
+      data: publicUser(result),
     };
   } catch (error) {
     console.log(error);
-    return { EC: 2, EM: "Có lỗi xảy ra khi đăng ký" };
+    return { EC: 2, EM: "Có lỗi xảy ra khi đăng ký." };
   }
 };
 
-const loginService = async (email, password) => {
+const loginService = async (email, password, context = {}) => {
   try {
-    const user = await User.findOne({ email });
+    const safeEmail = String(email || "").trim().toLowerCase();
+    const user = await User.findOne({ email: safeEmail, deletedAt: null }).select(
+      "+emailVerificationCodeHash +emailVerificationExpiresAt +twoFactorCodeHash +twoFactorExpiresAt",
+    );
+
     if (!user) {
-      return { EC: 1, EM: "Email hoặc mật khẩu không hợp lệ" };
+      return { EC: 1, EM: "Email hoặc mật khẩu không hợp lệ." };
+    }
+
+    if (["banned", "suspended"].includes(normalizeStatus(user.status))) {
+      return { EC: 1, EM: "Tài khoản hiện đang bị khóa." };
     }
 
     const isMatchPassword = await bcrypt.compare(password, user.password);
     if (!isMatchPassword) {
-      return { EC: 2, EM: "Email hoặc mật khẩu không hợp lệ" };
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+      await user.save();
+      await writeAuditLog({
+        actor: user._id,
+        action: "auth.login.failed",
+        targetType: "user",
+        targetId: String(user._id),
+        ipAddress: context.ipAddress || "",
+        userAgent: context.userAgent || "",
+      });
+      return { EC: 2, EM: "Email hoặc mật khẩu không hợp lệ." };
     }
 
-    const payload = {
-      _id: user._id,
-      email: user.email,
-      name: user.name,
-    };
+    if (!user.isEmailVerified) {
+      const hasActiveVerificationCode =
+        user.emailVerificationCodeHash &&
+        user.emailVerificationExpiresAt &&
+        user.emailVerificationExpiresAt > new Date();
 
-    const access_token = jwt.sign(payload, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRE || "7d",
-    });
+      if (!hasActiveVerificationCode) {
+        await sendVerificationCodeToUser(user);
+      }
 
-    return {
-      EC: 0,
-      access_token,
-      user: {
-        _id: user._id,
+      return {
+        EC: 0,
+        requiresEmailVerification: true,
         email: user.email,
-        name: user.name,
-        avatar: user.avatar,
-      },
-    };
+        EM: hasActiveVerificationCode
+          ? "Tài khoản chưa xác thực email. Vui lòng nhập OTP đã gửi."
+          : "Tài khoản chưa xác thực email. OTP mới đã được gửi.",
+      };
+    }
+
+    if (user.twoFactorEnabled) {
+      await sendTwoFactorCodeToUser(user);
+      return {
+        EC: 0,
+        requiresTwoFactor: true,
+        temp_token: createTempToken({ userId: user._id, purpose: "login_2fa" }),
+        EM: "Mã xác minh 2FA đã được gửi đến email của bạn.",
+      };
+    }
+
+    return issueLoginResult(user, context);
   } catch (error) {
     console.log(error);
-    return { EC: 3, EM: "Có lỗi xảy ra khi đăng nhập" };
+    return { EC: 3, EM: "Có lỗi xảy ra khi đăng nhập." };
   }
+};
+
+const verifyTwoFactorLoginService = async (tempToken, otp, context = {}) => {
+  try {
+    const decoded = jwt.verify(tempToken, process.env.JWT_SECRET);
+    if (decoded.purpose !== "login_2fa") {
+      return { EC: 1, EM: "Token xác minh không hợp lệ." };
+    }
+
+    const user = await User.findById(decoded.userId).select("+twoFactorCodeHash +twoFactorExpiresAt");
+    if (!user || !user.twoFactorEnabled) {
+      return { EC: 1, EM: "Không tìm thấy phiên xác minh 2FA." };
+    }
+
+    if (!user.twoFactorCodeHash || !user.twoFactorExpiresAt || user.twoFactorExpiresAt < new Date()) {
+      return { EC: 1, EM: "Mã 2FA đã hết hạn." };
+    }
+
+    if (hashCode(otp) !== user.twoFactorCodeHash) {
+      return { EC: 1, EM: "Mã 2FA không chính xác." };
+    }
+
+    user.twoFactorCodeHash = "";
+    user.twoFactorExpiresAt = null;
+    await user.save();
+
+    return issueLoginResult(user, context);
+  } catch (error) {
+    return { EC: 1, EM: "Phiên xác minh 2FA không hợp lệ hoặc đã hết hạn." };
+  }
+};
+
+const verifyEmailOtpService = async (email, otp) => {
+  const safeEmail = String(email || "").trim().toLowerCase();
+  const user = await User.findOne({ email: safeEmail, deletedAt: null }).select(
+    "+emailVerificationCodeHash +emailVerificationExpiresAt",
+  );
+
+  if (!user) {
+    return { EC: 1, EM: "Không tìm thấy tài khoản." };
+  }
+
+  if (!user.emailVerificationCodeHash || !user.emailVerificationExpiresAt) {
+    return { EC: 1, EM: "Không có mã xác thực đang hoạt động." };
+  }
+
+  if (user.emailVerificationExpiresAt < new Date()) {
+    return { EC: 1, EM: "Mã OTP đã hết hạn." };
+  }
+
+  if (hashCode(otp) !== user.emailVerificationCodeHash) {
+    return { EC: 1, EM: "Mã OTP không chính xác." };
+  }
+
+  user.isEmailVerified = true;
+  user.emailVerificationCodeHash = "";
+  user.emailVerificationExpiresAt = null;
+  await user.save();
+
+  return { EC: 0, EM: "Xác thực email thành công.", data: publicUser(user) };
+};
+
+const resendVerificationOtpService = async (email) => {
+  const safeEmail = String(email || "").trim().toLowerCase();
+  const user = await User.findOne({ email: safeEmail, deletedAt: null });
+  if (!user) {
+    return { EC: 1, EM: "Không tìm thấy tài khoản." };
+  }
+
+  await sendVerificationCodeToUser(user);
+  return { EC: 0, EM: "Đã gửi lại OTP xác thực email." };
 };
 
 const getUserService = async (currentUserId) => {
@@ -93,6 +360,7 @@ const getUserService = async (currentUserId) => {
 
     return await User.find({
       _id: { $nin: hiddenUserIds.filter((id) => id !== String(currentUserId)) },
+      deletedAt: null,
     }).select("-password");
   } catch (error) {
     console.log(error);
@@ -102,60 +370,260 @@ const getUserService = async (currentUserId) => {
 
 const getProfileService = async (userId) => {
   try {
-    const user = await User.findById(userId).select("-password");
+    const user = await User.findOne({ _id: userId, deletedAt: null }).select("-password");
     if (!user) {
-      return { EC: 1, EM: "Không tìm thấy người dùng" };
+      return { EC: 1, EM: "Không tìm thấy người dùng." };
     }
     return { EC: 0, data: user };
   } catch (error) {
     console.log(error);
-    return { EC: 1, EM: "Không thể tải hồ sơ" };
+    return { EC: 1, EM: "Không thể tải hồ sơ." };
   }
 };
 
 const updateProfileService = async (userId, updateData) => {
   try {
-    const user = await User.findByIdAndUpdate(userId, updateData, {
+    const safeUpdate = {
+      ...updateData,
+      name: updateData.name !== undefined ? sanitizeText(updateData.name) : undefined,
+      bio: updateData.bio !== undefined ? sanitizeText(updateData.bio) : undefined,
+      address: updateData.address !== undefined ? sanitizeText(updateData.address) : undefined,
+      phone: updateData.phone !== undefined ? sanitizeText(updateData.phone) : undefined,
+    };
+
+    Object.keys(safeUpdate).forEach((key) => safeUpdate[key] === undefined && delete safeUpdate[key]);
+
+    const user = await User.findOneAndUpdate({ _id: userId, deletedAt: null }, safeUpdate, {
       new: true,
     }).select("-password");
 
     if (!user) {
-      return { EC: 1, EM: "Không tìm thấy người dùng" };
+      return { EC: 1, EM: "Không tìm thấy người dùng." };
     }
 
     return {
       EC: 0,
-      EM: "Cập nhật hồ sơ thành công",
+      EM: "Cập nhật hồ sơ thành công.",
       data: user,
     };
   } catch (error) {
     console.log(error);
-    return { EC: 1, EM: "Không thể cập nhật hồ sơ" };
+    return { EC: 1, EM: "Không thể cập nhật hồ sơ." };
   }
 };
 
 const forgotPasswordService = async (email) => {
   try {
-    const user = await User.findOne({ email });
+    const safeEmail = String(email || "").trim().toLowerCase();
+    const user = await User.findOne({ email: safeEmail, deletedAt: null });
     if (!user) {
-      return { EC: 1, EM: "Email không tồn tại" };
+      return { EC: 1, EM: "Email không tồn tại." };
     }
+
+    await sendResetCodeToUser(user);
+    await writeAuditLog({
+      actor: user._id,
+      action: "auth.password_reset.request",
+      targetType: "user",
+      targetId: String(user._id),
+    });
 
     return {
       EC: 0,
-      EM: "Yêu cầu khôi phục đã được ghi nhận",
+      EM: "OTP đặt lại mật khẩu đã được gửi đến email của bạn.",
     };
   } catch (error) {
     console.log(error);
-    return { EC: 2, EM: "Có lỗi xảy ra" };
+    return { EC: 2, EM: "Có lỗi xảy ra." };
+  }
+};
+
+const resetPasswordService = async (email, otp, newPassword) => {
+  const safeEmail = String(email || "").trim().toLowerCase();
+  const user = await User.findOne({ email: safeEmail, deletedAt: null }).select(
+    "+passwordResetCodeHash +passwordResetExpiresAt",
+  );
+
+  if (!user) {
+    return { EC: 1, EM: "Không tìm thấy tài khoản." };
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    return { EC: 1, EM: "Mật khẩu mới phải có ít nhất 6 ký tự." };
+  }
+
+  if (!user.passwordResetCodeHash || !user.passwordResetExpiresAt) {
+    return { EC: 1, EM: "Không có OTP đặt lại mật khẩu đang hoạt động." };
+  }
+
+  if (user.passwordResetExpiresAt < new Date()) {
+    return { EC: 1, EM: "OTP đặt lại mật khẩu đã hết hạn." };
+  }
+
+  if (hashCode(otp) !== user.passwordResetCodeHash) {
+    return { EC: 1, EM: "OTP đặt lại mật khẩu không chính xác." };
+  }
+
+  user.password = await bcrypt.hash(newPassword, saltRounds);
+  user.passwordResetCodeHash = "";
+  user.passwordResetExpiresAt = null;
+  await user.save();
+
+  await writeAuditLog({
+    actor: user._id,
+    action: "auth.password_reset.complete",
+    targetType: "user",
+    targetId: String(user._id),
+  });
+
+  return { EC: 0, EM: "Đặt lại mật khẩu thành công." };
+};
+
+const changePasswordService = async (userId, currentPassword, newPassword) => {
+  const user = await User.findOne({ _id: userId, deletedAt: null });
+  if (!user) {
+    return { EC: 1, EM: "Không tìm thấy tài khoản." };
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    return { EC: 1, EM: "Mật khẩu mới phải có ít nhất 6 ký tự." };
+  }
+
+  const isMatchPassword = await bcrypt.compare(currentPassword || "", user.password);
+  if (!isMatchPassword) {
+    return { EC: 1, EM: "Mật khẩu hiện tại không chính xác." };
+  }
+
+  user.password = await bcrypt.hash(newPassword, saltRounds);
+  await user.save();
+
+  return { EC: 0, EM: "Đổi mật khẩu thành công." };
+};
+
+const deleteAccountService = async (userId, password) => {
+  const user = await User.findOne({ _id: userId, deletedAt: null });
+  if (!user) {
+    return { EC: 1, EM: "Không tìm thấy tài khoản." };
+  }
+
+  const isMatchPassword = await bcrypt.compare(password || "", user.password);
+  if (!isMatchPassword) {
+    return { EC: 1, EM: "Mật khẩu không chính xác." };
+  }
+
+  user.deletedAt = new Date();
+  user.status = "suspended";
+  await user.save();
+  await DeviceSession.updateMany({ user: user._id }, { isActive: false, lastSeenAt: new Date() });
+
+  return { EC: 0, EM: "Tài khoản đã được xóa." };
+};
+
+const logoutService = async (userId, deviceId) => {
+  if (deviceId) {
+    await DeviceSession.findOneAndUpdate({ user: userId, deviceId }, { isActive: false });
+  } else {
+    await DeviceSession.updateMany({ user: userId }, { isActive: false });
+  }
+  return { EC: 0, EM: "Đăng xuất thành công." };
+};
+
+const getDeviceHistoryService = async (userId) => {
+  const sessions = await DeviceSession.find({ user: userId })
+    .sort({ lastSeenAt: -1 })
+    .lean();
+  return { EC: 0, data: sessions };
+};
+
+const toggleTwoFactorService = async (userId, enabled, password) => {
+  const user = await User.findOne({ _id: userId, deletedAt: null });
+  if (!user) {
+    return { EC: 1, EM: "Không tìm thấy tài khoản." };
+  }
+
+  const isMatchPassword = await bcrypt.compare(password || "", user.password);
+  if (!isMatchPassword) {
+    return { EC: 1, EM: "Mật khẩu không chính xác." };
+  }
+
+  user.twoFactorEnabled = Boolean(enabled);
+  if (!enabled) {
+    user.twoFactorCodeHash = "";
+    user.twoFactorExpiresAt = null;
+  }
+  await user.save();
+
+  return {
+    EC: 0,
+    EM: enabled ? "Đã bật xác thực 2 lớp." : "Đã tắt xác thực 2 lớp.",
+    data: publicUser(user),
+  };
+};
+
+const googleLoginService = async (idToken, context = {}) => {
+  try {
+    if (!idToken) {
+      return { EC: 1, EM: "Thiếu Google ID token." };
+    }
+
+    const response = await axios.get("https://oauth2.googleapis.com/tokeninfo", {
+      params: { id_token: idToken },
+      timeout: 10000,
+    });
+
+    const payload = response.data || {};
+    if (!payload.email || payload.email_verified !== "true") {
+      return { EC: 1, EM: "Tài khoản Google chưa xác thực email." };
+    }
+
+    if (process.env.GOOGLE_CLIENT_ID && payload.aud !== process.env.GOOGLE_CLIENT_ID) {
+      return { EC: 1, EM: "Google client id không khớp cấu hình." };
+    }
+
+    let user = await User.findOne({ email: String(payload.email).toLowerCase(), deletedAt: null });
+    if (!user) {
+      const randomPassword = crypto.randomBytes(16).toString("hex");
+      user = await User.create({
+        name: payload.name || payload.email.split("@")[0],
+        email: String(payload.email).toLowerCase(),
+        password: await bcrypt.hash(randomPassword, saltRounds),
+        role: "user",
+        status: "active",
+        authProvider: "google",
+        googleId: payload.sub,
+        isEmailVerified: true,
+        avatar: payload.picture || "",
+      });
+    } else {
+      user.authProvider = "google";
+      user.googleId = payload.sub;
+      user.isEmailVerified = true;
+      if (!user.avatar && payload.picture) user.avatar = payload.picture;
+      await user.save();
+    }
+
+    return issueLoginResult(user, context);
+  } catch (error) {
+    console.error("Google login failed:", error.message);
+    return { EC: 1, EM: "Không thể đăng nhập bằng Google." };
   }
 };
 
 module.exports = {
+  changePasswordService,
   createUserService,
+  deleteAccountService,
   forgotPasswordService,
+  getDeviceHistoryService,
   getProfileService,
   getUserService,
+  googleLoginService,
   loginService,
+  logoutService,
+  resendVerificationOtpService,
+  resetPasswordService,
+  toggleTwoFactorService,
   updateProfileService,
+  verifyEmailOtpService,
+  verifyTwoFactorLoginService,
 };

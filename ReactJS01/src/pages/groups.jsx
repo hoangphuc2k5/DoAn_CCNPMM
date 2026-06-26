@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { useDispatch, useSelector } from "react-redux";
+import { useNavigate, useParams } from "react-router-dom";
+import { useSelector } from "react-redux";
 import {
   Avatar,
-  Badge,
   Button,
   Dropdown,
   Empty,
@@ -32,10 +31,7 @@ import {
   EllipsisOutlined,
   EyeInvisibleOutlined,
   FlagOutlined,
-  HomeOutlined,
   LeftOutlined,
-  LogoutOutlined,
-  MessageOutlined,
   PictureOutlined,
   PlusOutlined,
   SearchOutlined,
@@ -72,16 +68,17 @@ import {
   replyCommentApi,
   respondGroupJoinRequestApi,
   reviewGroupPostApi,
+  savePostApi,
   updateGroupApi,
   updateGroupMemberRoleApi,
   updatePostApi,
   reactPostApi,
   sharePostApi,
+  unsavePostApi,
   uploadGroupAvatarApi,
   uploadGroupCoverApi,
 } from "../util/api";
 import { getMediaUrl } from "../util/media";
-import { logout } from "../Redux/authSlice";
 import CreatePostComposer from "../components/post/CreatePostComposer";
 import PostCommentsModal from "../components/post/PostCommentsModal";
 
@@ -152,7 +149,6 @@ const getReactionOption = (type) =>
 const GroupsPage = () => {
   const navigate = useNavigate();
   const { groupId: routeGroupId } = useParams();
-  const dispatch = useDispatch();
   const { isAuthenticated, user } = useSelector((state) => state.auth);
   const userProfile = useSelector((state) => state.userProfile.profileUser);
   const [groups, setGroups] = useState([]);
@@ -190,7 +186,6 @@ const GroupsPage = () => {
   const canManageRoles = selectedGroup?.myRole === "admin";
   const settingPrivacy = Form.useWatch("privacy", settingsForm) || selectedGroup?.privacy;
   const displayName = userProfile?.name || user?.name || user?.email || "Nguoi Dung";
-  const displayHandle = user?.email ? user.email.split("@")[0] : "nguoidung";
 
   const loadGroups = async () => {
     setLoading(true);
@@ -652,6 +647,7 @@ const GroupsPage = () => {
     const isMine = post.author?._id === user?._id;
     const canRemove = canDeletePost(post);
     const items = [
+      { key: "save", icon: <BookOutlined />, label: post.isSaved ? "Bỏ lưu bài viết" : "Lưu bài viết" },
       isMine ? { key: "edit", icon: <EditOutlined />, label: "Chỉnh sửa bài viết" } : null,
       !isMine ? { key: "hide", icon: <EyeInvisibleOutlined />, label: "Ẩn bài viết" } : null,
       !isMine ? { key: "report", icon: <FlagOutlined />, label: "Báo cáo bài viết" } : null,
@@ -661,6 +657,18 @@ const GroupsPage = () => {
     return {
       items,
       onClick: async ({ key }) => {
+        if (key === "save") {
+          const res = post.isSaved ? await unsavePostApi(post._id) : await savePostApi(post._id);
+          if (res?.EC === 0) {
+            updateGroupPost(post._id, (currentPost) => ({
+              ...currentPost,
+              isSaved: !post.isSaved,
+            }));
+            message.success(res.EM || (post.isSaved ? "Đã bỏ lưu bài viết" : "Đã lưu bài viết"));
+          } else {
+            message.error(res?.EM || "Không thể cập nhật trạng thái lưu");
+          }
+        }
         if (key === "edit") {
           handleEditGroupPost(post);
         }
@@ -797,71 +805,6 @@ const GroupsPage = () => {
 
     return false;
   };
-
-  const renderSidebar = () => (
-    <aside className="tg-sidebar">
-      <Link to="/" className="tg-brand">
-        <span className="tg-brand-mark">T</span>
-        <span>Tegram</span>
-      </Link>
-
-      <nav className="tg-nav" aria-label="Tegram">
-        <Link to="/" className="tg-nav-item">
-          <HomeOutlined />
-          <span>Trang chủ</span>
-        </Link>
-        <Link to="/search" className="tg-nav-item">
-          <SearchOutlined />
-          <span>Tìm kiếm</span>
-        </Link>
-        <button className="tg-nav-item" type="button">
-          <Badge count={3} size="small">
-            <BellOutlined />
-          </Badge>
-          <span>Thông báo</span>
-        </button>
-        <Link to="/chat" className="tg-nav-item">
-          <MessageOutlined />
-          <span>Tin nhắn</span>
-        </Link>
-        <button className="tg-nav-item" type="button">
-          <BookOutlined />
-          <span>Đã lưu</span>
-        </button>
-        <Link to={`/profile/${user?._id || ""}`} className="tg-nav-item">
-          <UserOutlined />
-          <span>Trang cá nhân</span>
-        </Link>
-        <button className="tg-nav-item active" type="button">
-          <TeamOutlined />
-          <span>Nhóm</span>
-        </button>
-        <button className="tg-nav-item" type="button">
-          <SettingOutlined />
-          <span>Cài đặt</span>
-        </button>
-      </nav>
-
-      <div className="tg-sidebar-user">
-        <Avatar src={getMediaUrl(userProfile?.avatar)}>{getInitials(displayName)}</Avatar>
-        <div>
-          <strong>{displayName}</strong>
-          <span>@{displayHandle}</span>
-        </div>
-      </div>
-      <Button
-        className="tg-logout"
-        type="text"
-        icon={<LogoutOutlined />}
-        onClick={() => {
-          dispatch(logout());
-          navigate("/");
-        }}
-      >
-        Đăng xuất
-      </Button>
-    </aside>
-  );
 
   const renderCover = (group, compact = false, editable = false) => {
     const coverUrl = getMediaUrl(group?.coverPhoto);
@@ -1733,7 +1676,6 @@ const GroupsPage = () => {
 
   return (
     <main className="tegram-groups-app">
-      {renderSidebar()}
       <section className="tg-workspace">
         {viewMode === "detail" ? renderDetail() : renderDirectory()}
       </section>

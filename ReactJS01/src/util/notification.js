@@ -1,3 +1,5 @@
+import appLogo from "../Logo/logo.jpg";
+
 const getId = (value) => value?._id || value || "";
 
 const buildPostTarget = (item) => {
@@ -83,12 +85,12 @@ const showLocalNotification = async (item) => {
     registration.showNotification(title, {
       body,
       data: { url },
-      icon: "/vite.svg",
+      icon: appLogo,
     });
     return;
   }
 
-  const notification = new Notification(title, { body });
+  const notification = new Notification(title, { body, icon: appLogo });
   notification.onclick = () => {
     window.focus();
     window.location.href = url;

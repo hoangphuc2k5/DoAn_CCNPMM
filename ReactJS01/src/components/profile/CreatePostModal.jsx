@@ -15,6 +15,23 @@ import MentionInput from "../ui/MentionInput";
 
 const { Text } = Typography;
 
+const getMediaSource = (item) => {
+  if (!item) return "";
+  if (typeof item === "string") return item;
+  return item.url || item.src || item.path || "";
+};
+
+const getMediaType = (item) => {
+  if (item?.type) return item.type;
+  const src = getMediaSource(item);
+  const cleanSrc = src.split("#")[0];
+  return src.includes("#type=video") ||
+    src.includes("/video/") ||
+    /\.(mp4|mov|webm|avi|mkv)$/i.test(cleanSrc)
+    ? "video"
+    : "image";
+};
+
 const CreatePostModal = ({ open, onCancel, onSuccess, currentUser, postToEdit }) => {
   const [content, setContent] = useState("");
   const [visibility, setVisibility] = useState("public");
@@ -29,16 +46,16 @@ const CreatePostModal = ({ open, onCancel, onSuccess, currentUser, postToEdit })
       setVisibility(postToEdit.visibility || postToEdit.privacy || "public");
       
       if (postToEdit.media && postToEdit.media.length > 0) {
-        const existing = postToEdit.media.map((src) => {
-          const isVideo = src.includes("#type=video") || src.endsWith(".mp4") || src.endsWith(".mov") || src.includes("/video/");
+        const existing = postToEdit.media.map((item) => {
+          const src = getMediaSource(item);
           return {
             file: null,
             previewUrl: getMediaUrl(src),
-            type: isVideo ? "video" : "image",
+            type: getMediaType(item),
             isExisting: true,
             originalSrc: src,
           };
-        });
+        }).filter((item) => item.originalSrc);
         setMediaFiles(existing);
       } else {
         setMediaFiles([]);
@@ -68,7 +85,7 @@ const CreatePostModal = ({ open, onCancel, onSuccess, currentUser, postToEdit })
   const removeMedia = (index) => {
     setMediaFiles((prev) => {
       const item = prev[index];
-      if (item && item.previewUrl) {
+      if (item?.previewUrl?.startsWith("blob:")) {
         URL.revokeObjectURL(item.previewUrl);
       }
       return prev.filter((_, i) => i !== index);
@@ -93,7 +110,7 @@ const CreatePostModal = ({ open, onCancel, onSuccess, currentUser, postToEdit })
       setLoading(true);
 
       // Upload any new files to the server
-      const newFilesToUpload = mediaFiles.filter((m) => m.file !== null);
+      const newFilesToUpload = mediaFiles.filter((m) => m.file);
       let finalMediaUrls = [];
 
       if (newFilesToUpload.length > 0) {
@@ -117,9 +134,9 @@ const CreatePostModal = ({ open, onCancel, onSuccess, currentUser, postToEdit })
             uploadIdx++;
             return url;
           }
-        });
+        }).filter(Boolean);
       } else {
-        finalMediaUrls = mediaFiles.map((m) => m.originalSrc);
+        finalMediaUrls = mediaFiles.map((m) => m.originalSrc).filter(Boolean);
       }
 
       if (postToEdit) {
@@ -181,7 +198,7 @@ const CreatePostModal = ({ open, onCancel, onSuccess, currentUser, postToEdit })
       }
     } catch (err) {
       console.error(err);
-      message.error(postToEdit ? "Có lỗi xảy ra khi cập nhật bài viết." : "Có lỗi xảy ra khi đăng bài.");
+      message.error(err?.message || (postToEdit ? "Có lỗi xảy ra khi cập nhật bài viết." : "Có lỗi xảy ra khi đăng bài."));
     } finally {
       setLoading(false);
     }

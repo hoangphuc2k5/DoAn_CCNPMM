@@ -8,14 +8,18 @@ const { getHomepage } = require("./controllers/homeController");
 const cors = require("cors");
 const http = require("http");
 const { initSocket } = require("./services/socketService");
+const sanitizeInput = require("./middleware/sanitizeInput");
+const securityHeaders = require("./middleware/securityHeaders");
 const app = express(); //cấu hình app là express
 const server = http.createServer(app);
 initSocket(server);
 //cấu hình port, nếu thấy port trong env, không thì trả về 8888
 const port = process.env.PORT || 8888;
 app.use(cors()); //config cors
+app.use(securityHeaders);
 app.use(express.json()); // //config req.body cho json
 app.use(express.urlencoded({ extended: true })); // for form data
+app.use(sanitizeInput);
 app.use("/uploads", express.static("uploads")); // serve uploaded files
 configViewEngine(app); //config template engine
 //config route cho view ejs

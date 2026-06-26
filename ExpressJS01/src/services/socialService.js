@@ -8,10 +8,12 @@ const Notification = require("../models/notification");
 const Post = require("../models/post");
 const Reaction = require("../models/reaction");
 const Report = require("../models/report");
+const SavedPost = require("../models/savedPost");
 const Group = require("../models/group");
 const User = require("../models/user");
-const { createNotification } = require("./notificationService");
 const { processPostMediaFiles, removeStoredMediaFiles } = require("./mediaService");
+
+const POST_VISIBILITIES = ["public", "friends", "private", "group"];
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
 const idOf = (value) => String(value?._id || value);
@@ -143,6 +145,14 @@ const decoratePosts = async (posts, currentUserId) => {
     .populate("author", "name email avatar")
     .lean();
   const reactions = await Reaction.find({ post: { $in: postIds } }).lean();
+  const savedPostIds = new Set(
+    (
+      await SavedPost.find({
+        user: currentUserId,
+        post: { $in: postIds },
+      }).lean()
+    ).map((item) => String(item.post)),
+  );
 
   return posts.map((post) => {
     const postObject = post.toObject ? post.toObject() : post;
@@ -186,6 +196,7 @@ const decoratePosts = async (posts, currentUserId) => {
       isLiked: Boolean(myReaction),
       isOwner: isOwner,
       isPinned: post.isPinned || false,
+      isSaved: savedPostIds.has(String(post._id)),
     };
   });
 };
@@ -238,20 +249,19 @@ const getHiddenItemIds = async (userId, targetType) =>
   HiddenItem.find({ user: userId, targetType }).distinct("targetId");
 
 const createPost = async (userId, payload, files = []) => {
-  const content = payload.content?.trim() || (files.length ? " " : "");
+  const media = await processPostMediaFiles(files, userId);
+  const payloadMedia = Array.isArray(payload.media) ? payload.media.filter(Boolean) : [];
+  const content = payload.content?.trim() || (files.length || payloadMedia.length ? " " : "");
   if (!content) return { EC: 1, EM: "Nội dung bài viết không được rỗng" };
 
-  const media = await processPostMediaFiles(files, userId);
   const mentionedUsers = await findMentionedUsers(content.trim());
   const post = await Post.create({
     author: userId,
     content: content.trim(),
-    visibility: payload.visibility || "public",
+    visibility: POST_VISIBILITIES.includes(payload.visibility) ? payload.visibility : "public",
     mentions: mentionedUsers.map((user) => user._id),
-    hashtags: extractHashtags(content),
-    media: payload.media || [],
     hashtags: extractHashtags(content.trim()),
-    media,
+    media: media.length ? media : payloadMedia,
   });
 
 
@@ -360,6 +370,106 @@ const getPostById = async (userId, postId) => {
 
   const [data] = await decoratePosts([post], userId);
   return { EC: 0, data };
+};
+
+const getSavedPosts = async (userId, query = {}) => {
+  const page = Math.max(Number(query.page || 1), 1);
+  const limit = Math.min(Math.max(Number(query.limit || 10), 1), 30);
+  const blockedUserIds = await getBlockedUserIds(userId);
+  const hiddenPostIds = await getHiddenItemIds(userId, "post");
+
+  const savedItems = await SavedPost.find({ user: userId })
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .populate({
+      path: "post",
+      match: {
+        _id: { $nin: hiddenPostIds },
+        author: { $nin: blockedUserIds.map(toObjectId) },
+      },
+      populate: [
+        { path: "author", select: "name email avatar" },
+        { path: "mentions", select: "name email" },
+        {
+          path: "sharedPost",
+          populate: { path: "author", select: "name email avatar" },
+        },
+      ],
+    });
+
+  const visiblePairs = [];
+  for (const item of savedItems) {
+    if (!item.post) continue;
+    const access = await canViewPost(item.post, userId);
+    if (access.allowed) {
+      visiblePairs.push({ post: item.post, savedAt: item.createdAt });
+    }
+  }
+
+  const decoratedPosts = await decoratePosts(
+    visiblePairs.map((item) => item.post),
+    userId,
+  );
+  const savedAtByPostId = new Map(
+    visiblePairs.map((item) => [String(item.post._id), item.savedAt]),
+  );
+
+  return {
+    EC: 0,
+    data: decoratedPosts.map((post) => ({
+      ...post,
+      isSaved: true,
+      savedAt: savedAtByPostId.get(String(post._id)),
+    })),
+    pagination: {
+      page,
+      limit,
+      hasMore: savedItems.length === limit,
+    },
+  };
+};
+
+const savePost = async (userId, postId) => {
+  if (!mongoose.isValidObjectId(postId)) {
+    return { EC: 1, EM: "Bài viết không hợp lệ." };
+  }
+
+  const post = await Post.findById(postId)
+    .populate("author", "name email avatar")
+    .populate("mentions", "name email")
+    .populate({
+      path: "sharedPost",
+      populate: { path: "author", select: "name email avatar" },
+    });
+
+  if (!post) return { EC: 1, EM: "Không tìm thấy bài viết." };
+  if (await hasBlockBetween(userId, post.author?._id || post.author)) {
+    return { EC: 2, EM: "Không thể lưu bài viết này." };
+  }
+
+  const access = await canViewPost(post, userId);
+  if (!access.allowed) {
+    return { EC: 3, EM: "Bạn không có quyền xem bài viết này." };
+  }
+
+  await SavedPost.findOneAndUpdate(
+    { user: userId, post: postId },
+    { user: userId, post: postId },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+
+  const [data] = await decoratePosts([post], userId);
+  return { EC: 0, EM: "Đã lưu bài viết.", data: { ...data, isSaved: true } };
+};
+
+const unsavePost = async (userId, postId) => {
+  if (!mongoose.isValidObjectId(postId)) {
+    return { EC: 1, EM: "Bài viết không hợp lệ." };
+  }
+
+  await SavedPost.deleteOne({ user: userId, post: postId });
+  return { EC: 0, EM: "Đã bỏ lưu bài viết.", data: { postId, isSaved: false } };
 };
 
 const reactPost = async (userId, postId, type = "like") => {
@@ -545,8 +655,11 @@ const updatePost = async (userId, postId, payload = {}) => {
   if (!post) return { EC: 1, EM: "Khong tim thay bai viet" };
   if (!isSameId(post.author, userId)) return { EC: 2, EM: "Chi tac gia moi duoc chinh sua bai viet" };
 
-  const content = payload.content?.trim() || "";
-  if (!content && !post.media?.length) {
+  const hasMediaPayload = Array.isArray(payload.media);
+  const nextMedia = hasMediaPayload ? payload.media.filter(Boolean) : post.media || [];
+  const content =
+    payload.content === undefined ? post.content || "" : String(payload.content || "").trim();
+  if (!content && !nextMedia.length) {
     return { EC: 3, EM: "Bai viet can co noi dung hoac tep dinh kem" };
   }
 
@@ -555,10 +668,17 @@ const updatePost = async (userId, postId, payload = {}) => {
     hashtags: extractHashtags(content),
   };
 
-  if (payload.visibility && ["public", "group"].includes(payload.visibility)) {
+  if (hasMediaPayload) {
+    update.media = nextMedia;
+  }
+
+  if (payload.visibility && POST_VISIBILITIES.includes(payload.visibility)) {
     const group = await getPostGroup(post);
+    if (!group && payload.visibility === "group") {
+      return { EC: 4, EM: "Bai viet ca nhan khong the dat che do nhom" };
+    }
     if (group?.privacy === "private" && payload.visibility === "public") {
-      return { EC: 4, EM: "Nhom rieng tu khong the dat bai cong khai" };
+      return { EC: 5, EM: "Nhom rieng tu khong the dat bai cong khai" };
     }
     update.visibility = payload.visibility;
   }
@@ -871,49 +991,6 @@ const markAllNotificationsRead = async (userId) => {
   return { EC: 0, EM: "Đã đánh dấu tất cả thông báo là đã đọc" };
 };
 
-const updatePost = async (userId, postId, payload) => {
-  const post = await Post.findOne({ _id: postId, author: userId });
-  if (!post) return { EC: 1, EM: "Không tìm thấy bài viết hoặc bạn không phải là tác giả" };
-
-  const content = payload.content?.trim();
-  if (content !== undefined) {
-    if (!content) return { EC: 2, EM: "Nội dung bài viết không được rỗng" };
-    post.content = content;
-    post.hashtags = extractHashtags(content);
-    // Find mentioned users
-    const mentionedUsers = await findMentionedUsers(content);
-    post.mentions = mentionedUsers.map((user) => user._id);
-  }
-
-  if (payload.visibility !== undefined) {
-    post.visibility = payload.visibility;
-  }
-
-  if (payload.media !== undefined) {
-    post.media = payload.media;
-  }
-
-  await post.save();
-  const populatedPost = await Post.findById(post._id)
-    .populate("author", "name email avatar")
-    .populate("mentions", "name email");
-
-  const [decorated] = await decoratePosts([populatedPost], userId);
-
-  return { EC: 0, EM: "Cập nhật bài viết thành công", data: decorated };
-};
-
-const deletePost = async (userId, postId) => {
-  const post = await Post.findOne({ _id: postId, author: userId });
-  if (!post) return { EC: 1, EM: "Không tìm thấy bài viết hoặc bạn không phải là tác giả" };
-
-  await post.deleteOne();
-  await Comment.deleteMany({ post: postId });
-  await Reaction.deleteMany({ post: postId });
-
-  return { EC: 0, EM: "Xóa bài viết thành công" };
-};
-
 const pinPost = async (userId, postId) => {
   const post = await Post.findOne({ _id: postId, author: userId });
   if (!post) return { EC: 1, EM: "Không tìm thấy bài viết hoặc bạn không phải là tác giả" };
@@ -943,6 +1020,7 @@ module.exports = {
   getHiddenItemIds,
   getNotifications,
   getPostById,
+  getSavedPosts,
   getRelationships,
   getTrendingTopics,
   hideTarget,
@@ -953,8 +1031,10 @@ module.exports = {
   respondFriendRequest,
   sendFriendRequest,
   sharePost,
+  savePost,
   unblockUser,
   unfollowUser,
+  unsavePost,
   updatePost,
   deletePost,
   pinPost,

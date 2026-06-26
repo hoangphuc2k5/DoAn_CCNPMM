@@ -2,10 +2,17 @@
 export default {
   content: ["./index.html", "./src/**/*.{js,jsx,ts,tsx}"],
   theme: {
+    fontFamily: {
+      sans: ["Segoe UI", "Arial", "sans-serif"],
+      serif: ["Segoe UI", "Arial", "sans-serif"],
+      mono: ["Segoe UI", "Arial", "sans-serif"],
+      display: ["Segoe UI", "Arial", "sans-serif"],
+      body: ["Segoe UI", "Arial", "sans-serif"],
+    },
     extend: {
       fontFamily: {
-        display: ["Playfair Display", "serif"],
-        body: ["Space Grotesk", "sans-serif"],
+        display: ["Segoe UI", "Arial", "sans-serif"],
+        body: ["Segoe UI", "Arial", "sans-serif"],
       },
       colors: {
         ink: "#0b0d11",

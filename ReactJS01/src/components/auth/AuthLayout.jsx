@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import appLogo from "../../Logo/logo.jpg";
 
 const previousIcon =
   "http://localhost:3845/assets/3fde87c52ef21c81f7a5495d72b686f38cdd8384.svg";
@@ -13,11 +14,16 @@ const tabs = [
 ];
 
 const AuthLayout = ({
+  title,
   heading = "Chào mừng",
+  subtitle = "Tiếp tục để truy cập nền tảng mạng xã hội của bạn.",
   activeTab = "login",
   formLabel = "--- Đăng nhập ---",
   children,
   footer,
+  onGoogleLogin,
+  googleLoading = false,
+  showGoogleButton = true,
 }) => {
   return (
     <div className="min-h-screen bg-white px-6 py-6">
@@ -26,7 +32,11 @@ const AuthLayout = ({
           <div className="flex flex-col gap-4">
             <div className="flex h-[500px] items-center justify-center rounded-[16px] bg-[#7f00fd]">
               <div className="flex w-[349.725px] flex-col items-center px-8 text-center">
-                <div className="text-[60px] leading-[60px] text-white">✦</div>
+                <img
+                  src={appLogo}
+                  alt="Tegram"
+                  className="h-36 w-36 rounded-full bg-white object-cover shadow-lg"
+                />
                 <div className="pt-6 text-[24px] font-bold leading-[33px] text-white">
                   Kết nối với mọi người
                 </div>
@@ -47,8 +57,9 @@ const AuthLayout = ({
 
           <div className="flex max-w-[430px] flex-col gap-10 self-center">
             <h1 className="text-[36px] font-bold leading-[40px] text-[#7f00fd]">
-              {heading}
+              {title || heading}
             </h1>
+            <p className="-mt-6 text-sm text-[#6b7280]">{subtitle}</p>
 
             <div className="flex flex-col gap-7">
               <div className="rounded-[16px] border-[1.6px] border-[#7f00fd] p-[9.6px]">
@@ -73,18 +84,22 @@ const AuthLayout = ({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2">
-                <p className="text-center text-[14px] font-light leading-5 text-[#515151]">
-                  Hoặc
-                </p>
-                <button
-                  type="button"
-                  className="flex h-[74px] w-full items-center justify-center gap-3 rounded-[4px] bg-[#7f00fd] text-[16px] font-bold leading-6 text-white"
-                >
-                  <img src={googleIcon} alt="" className="h-5 w-5" />
-                  <span>Continue with Google</span>
-                </button>
-              </div>
+              {showGoogleButton ? (
+                <div className="flex flex-col gap-2">
+                  <p className="text-center text-[14px] font-light leading-5 text-[#515151]">
+                    Hoặc
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onGoogleLogin}
+                    disabled={googleLoading}
+                    className="flex h-[74px] w-full items-center justify-center gap-3 rounded-[4px] bg-[#7f00fd] text-[16px] font-bold leading-6 text-white disabled:opacity-60"
+                  >
+                    <img src={googleIcon} alt="" className="h-5 w-5" />
+                    <span>{googleLoading ? "Đang xử lý..." : "Tiếp tục với Google"}</span>
+                  </button>
+                </div>
+              ) : null}
 
               <p className="text-center text-[14px] font-light leading-5 text-[#515151]">
                 {formLabel}

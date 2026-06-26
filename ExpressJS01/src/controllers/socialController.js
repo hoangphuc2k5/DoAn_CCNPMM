@@ -1,5 +1,6 @@
 const socialService = require("../services/socialService");
 const pushService = require("../services/pushService");
+const { processPostMediaFiles } = require("../services/mediaService");
 
 const currentUserId = (req) => req.user._id;
 
@@ -19,6 +20,21 @@ const getFeed = async (req, res) => {
 
 const getPostById = async (req, res) => {
   const data = await socialService.getPostById(currentUserId(req), req.params.postId);
+  return res.status(200).json(data);
+};
+
+const getSavedPosts = async (req, res) => {
+  const data = await socialService.getSavedPosts(currentUserId(req), req.query);
+  return res.status(200).json(data);
+};
+
+const savePost = async (req, res) => {
+  const data = await socialService.savePost(currentUserId(req), req.params.postId);
+  return res.status(200).json(data);
+};
+
+const unsavePost = async (req, res) => {
+  const data = await socialService.unsavePost(currentUserId(req), req.params.postId);
   return res.status(200).json(data);
 };
 
@@ -228,16 +244,6 @@ const unsubscribePush = async (req, res) => {
   return res.status(200).json(data);
 };
 
-const updatePost = async (req, res) => {
-  const data = await socialService.updatePost(currentUserId(req), req.params.postId, req.body);
-  return res.status(200).json(data);
-};
-
-const deletePost = async (req, res) => {
-  const data = await socialService.deletePost(currentUserId(req), req.params.postId);
-  return res.status(200).json(data);
-};
-
 const pinPost = async (req, res) => {
   const data = await socialService.pinPost(currentUserId(req), req.params.postId);
   return res.status(200).json(data);
@@ -248,14 +254,12 @@ const uploadPostMedia = async (req, res) => {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ EC: 1, EM: "Không có tệp tin nào được tải lên" });
     }
-    const fileUrls = req.files.map((file) => {
-      const type = file.mimetype.startsWith("video/") ? "video" : "image";
-      return `/uploads/posts/${file.filename}#type=${type}`;
-    });
-    return res.status(200).json({ EC: 0, EM: "Tải tệp tin thành công", data: fileUrls });
+
+    const media = await processPostMediaFiles(req.files, currentUserId(req));
+    return res.status(200).json({ EC: 0, EM: "Tải tệp tin thành công", data: media });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ EC: 2, EM: "Lỗi upload media" });
+    return res.status(500).json({ EC: 2, EM: error.message || "Lỗi upload media" });
   }
 };
 
@@ -269,6 +273,7 @@ module.exports = {
   getFeed,
   getNotifications,
   getPostById,
+  getSavedPosts,
   getRelationships,
   getTrendingTopics,
   hideComment,
@@ -286,10 +291,11 @@ module.exports = {
   respondFriendRequest,
   sendFriendRequest,
   sharePost,
+  savePost,
   unblockUser,
   unfollowUser,
+  unsavePost,
   updatePost,
-  deletePost,
   pinPost,
   uploadPostMedia,
   unfriendUser,

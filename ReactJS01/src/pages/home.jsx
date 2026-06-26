@@ -23,6 +23,7 @@ import {
 } from "antd";
 import {
   BellOutlined,
+  BookOutlined,
   CommentOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -41,8 +42,6 @@ import {
   UserAddOutlined,
   UserOutlined,
   PushpinOutlined,
-  EditOutlined,
-  DeleteOutlined,
   LockOutlined,
 } from "@ant-design/icons";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -66,18 +65,16 @@ import {
   reportCommentApi,
   reportPostApi,
   sharePostApi,
+  savePostApi,
   updatePostApi,
   deletePostApi,
   pinPostApi,
+  unsavePostApi,
 } from "../util/api";
 import { getMediaUrl } from "../util/media";
 import CreatePostModal from "../components/profile/CreatePostModal";
 import MentionInput from "../components/ui/MentionInput";
 import { getNotificationTargetUrl } from "../util/notification";
-  deletePostApi,
-  updatePostApi,
-} from "../util/api";
-import { getMediaUrl } from "../util/media";
 import CreatePostComposer from "../components/post/CreatePostComposer";
 import PostCommentsModal from "../components/post/PostCommentsModal";
 
@@ -614,7 +611,13 @@ const HomePage = () => {
 
   const renderPostMenu = (post) => {
     const isAuthor = post.author?._id === user?._id;
-    const items = [];
+    const items = [
+      {
+        key: "save",
+        icon: <BookOutlined />,
+        label: post.isSaved ? "Bỏ lưu bài viết" : "Lưu bài viết",
+      },
+    ];
 
     if (isAuthor) {
       items.push(
@@ -664,6 +667,19 @@ const HomePage = () => {
     return {
       items,
       onClick: async ({ key }) => {
+        if (key === "save") {
+          const res = post.isSaved ? await unsavePostApi(post._id) : await savePostApi(post._id);
+          if (res?.EC === 0) {
+            setPosts((prev) =>
+              prev.map((p) =>
+                p._id === post._id ? { ...p, isSaved: !post.isSaved } : p,
+              ),
+            );
+            message.success(res.EM || (post.isSaved ? "Đã bỏ lưu bài viết" : "Đã lưu bài viết"));
+          } else {
+            message.error(res?.EM || "Không thể cập nhật trạng thái lưu");
+          }
+        }
         if (key === "pin") {
           const res = await pinPostApi(post._id);
           if (res?.EC === 0) {
@@ -752,78 +768,6 @@ const HomePage = () => {
         }
       },
     });
-  };
-
-  const renderPostMenu = (post) => {
-    const isMine = post.author?._id === user?._id;
-    return {
-      items: isMine
-        ? [
-            { key: "edit", icon: <EditOutlined />, label: "Chỉnh sửa bài viết" },
-            { key: "delete", icon: <DeleteOutlined />, label: "Xóa bài viết", danger: true },
-          ]
-        : [
-            { key: "hide", icon: <EyeInvisibleOutlined />, label: "Ẩn bài viết" },
-            { key: "follow", icon: <UserAddOutlined />, label: "Theo dõi tác giả" },
-            { key: "friend", icon: <TeamOutlined />, label: "Gửi lời mời kết bạn" },
-            { key: "report", icon: <FlagOutlined />, label: "Báo cáo bài viết" },
-            { key: "block", icon: <StopOutlined />, label: "Chặn người dùng", danger: true },
-          ],
-    onClick: async ({ key }) => {
-      if (key === "edit") {
-        handleEditPost(post);
-      }
-      if (key === "delete") {
-        Modal.confirm({
-          title: "Xóa bài viết?",
-          okText: "Xóa",
-          okButtonProps: { danger: true },
-          cancelText: "Hủy",
-          onOk: async () => {
-            const res = await deletePostApi(post._id);
-            if (res?.EC === 0) {
-              setPosts((prev) => prev.filter((item) => item._id !== post._id));
-              message.success(res.EM || "Đã xóa bài viết");
-            } else {
-              message.error(res?.EM || "Không thể xóa bài viết");
-            }
-          },
-        });
-      }
-      if (key === "hide") {
-        const res = await hidePostApi(post._id);
-        if (res?.EC === 0) {
-          setHiddenPostIds((prev) => (prev.includes(post._id) ? prev : [...prev, post._id]));
-          message.success(res.EM || "Đã ẩn bài viết");
-        } else {
-          message.error(res?.EM || "Không thể ẩn bài viết");
-        }
-      }
-      if (key === "follow") {
-        await followUserApi(post.author._id);
-        message.success("Đã theo dõi");
-      }
-      if (key === "friend") {
-        const res = await friendRequestApi(post.author._id);
-        message.success(res?.EM || "Đã gửi lời mời");
-      }
-      if (key === "report") {
-        askReason("Báo cáo bài viết", async (reason) => {
-          const res = await reportPostApi(post._id, reason);
-          if (res?.EC === 0) {
-            message.success(res.EM || "Đã gửi báo cáo");
-          } else {
-            message.error(res?.EM || "Không thể gửi báo cáo");
-          }
-        });
-      }
-      if (key === "block") {
-        await blockUserApi(post.author._id);
-        message.success("Đã chặn người dùng");
-        await loadFeed({ nextPage: 1 });
-      }
-    },
-    };
   };
 
   const renderCommentList = (post, { preview = false } = {}) => {
@@ -946,6 +890,7 @@ const HomePage = () => {
           visibilityValue={visibility}
           onVisibilityChange={setVisibility}
         />
+        </Card>
 
         <Card className="composer-card composer-card-collapsed legacy-composer-hidden">
           <div className="composer-head">
@@ -963,10 +908,7 @@ const HomePage = () => {
               readOnly
               onClick={() => setComposeOpen(true)}
               onFocus={() => setComposeOpen(true)}
-              value=""
-              onChange={(event) => setPostContent(event.target.value)}
               placeholder={`${displayName}, bạn đang nghĩ gì?`}
-              readOnly
             />
           </div>
           <Input.TextArea
@@ -1171,24 +1113,6 @@ const HomePage = () => {
                 <Typography.Paragraph className="post-content">
                   {renderPostContent(post.content)}
                 </Typography.Paragraph>
-
-                {post.media && post.media.length > 0 ? (
-                  <div className="post-media-gallery my-3 rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 flex items-center justify-center max-h-[400px]">
-                    {post.media[0].includes("#type=video") || post.media[0].endsWith(".mp4") || post.media[0].endsWith(".mov") || post.media[0].includes("/video/") ? (
-                      <video
-                        src={getMediaUrl(post.media[0])}
-                        controls
-                        className="max-w-full max-h-[400px] object-contain"
-                      />
-                    ) : (
-                      <img
-                        src={getMediaUrl(post.media[0])}
-                        alt="Post media"
-                        className="max-w-full max-h-[400px] object-contain"
-                      />
-                    )}
-                  </div>
-                ) : null}
 
                 {post.hashtags?.length ? (
                   <Space wrap className="post-tags">

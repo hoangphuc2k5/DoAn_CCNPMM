@@ -1,4 +1,14 @@
 import axios from "axios";
+
+const DEVICE_STORAGE_KEY = "device_id";
+const getOrCreateDeviceId = () => {
+  const existing = localStorage.getItem(DEVICE_STORAGE_KEY);
+  if (existing) return existing;
+
+  const nextId = `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  localStorage.setItem(DEVICE_STORAGE_KEY, nextId);
+  return nextId;
+};
 // Set config defaults when creating the instance
 const instance = axios.create({
     baseURL: import.meta.env.VITE_BACKEND_URL
@@ -9,6 +19,7 @@ const instance = axios.create({
 instance.interceptors.request.use(function (config) {
     // Do something before request is sent
     config.headers.Authorization = `Bearer ${localStorage.getItem("access_token")}`;
+    config.headers["X-Device-Id"] = getOrCreateDeviceId();
     return config;
 }, function (error) {
     // Do something with request error

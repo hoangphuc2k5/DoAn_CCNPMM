@@ -1,42 +1,37 @@
-import React, { Suspense, lazy } from "react";
+import React from "react";
 import ReactDOM from "react-dom/client";
 import {
-  createBrowserRouter,
+  Button,
+  Result,
+} from "antd";
+import { Provider, useSelector } from "react-redux";
+import {
   Link,
-  RouterProvider,
-  useRouteError,
   Navigate,
+  RouterProvider,
+  createBrowserRouter,
+  useRouteError,
 } from "react-router-dom";
-import { Button, Result, Spin } from "antd";
-import { Provider } from "react-redux";
-import { useSelector } from "react-redux";
 import App from "./App.jsx";
 import store from "./Redux/store.js";
-import "./styles/global.css";
 import { SocketProvider } from "./components/context/socket.context.jsx";
-
-const ForgotPasswordPage = lazy(() => import("./pages/forgot-password.jsx"));
-const HomePage = lazy(() => import("./pages/home.jsx"));
-const LoginPage = lazy(() => import("./pages/login.jsx"));
-const RegisterPage = lazy(() => import("./pages/register.jsx"));
-const UserPage = lazy(() => import("./pages/user.jsx"));
-const UserProfilePage = lazy(() => import("./pages/user-profile.jsx"));
-const SearchPage = lazy(() => import("./pages/search.jsx"));
-const ChatPage = lazy(() => import("./pages/chat.jsx"));
-const NotificationPage = lazy(() => import("./pages/notifications.jsx"));
-const GroupsPage = lazy(() => import("./pages/groups.jsx"));
-
-const withSuspense = (element) => (
-  <Suspense
-    fallback={
-      <div className="route-loading">
-        <Spin />
-      </div>
-    }
-  >
-    {element}
-  </Suspense>
-);
+import ForgotPasswordPage from "./pages/forgot-password.jsx";
+import HomePage from "./pages/home.jsx";
+import LoginPage from "./pages/login.jsx";
+import RegisterPage from "./pages/register.jsx";
+import UserPage from "./pages/user.jsx";
+import UserProfilePage from "./pages/user-profile.jsx";
+import SearchPage from "./pages/search.jsx";
+import ChatPage from "./pages/chat.jsx";
+import NotificationPage from "./pages/notifications.jsx";
+import GroupsPage from "./pages/groups.jsx";
+import AdminPage from "./pages/admin.jsx";
+import SavedPage from "./pages/saved.jsx";
+import ResetPasswordPage from "./pages/reset-password.jsx";
+import SecurityPage from "./pages/security.jsx";
+import VerifyEmailPage from "./pages/verify-email.jsx";
+import VerifyTwoFactorPage from "./pages/verify-2fa.jsx";
+import "./styles/global.css";
 
 const ProfileRedirect = () => {
   const { user } = useSelector((state) => state.auth);
@@ -46,17 +41,42 @@ const ProfileRedirect = () => {
   return <Navigate to="/login" replace />;
 };
 
+const AdminRoute = () => {
+  const { isAuthenticated, user } = useSelector((state) => state.auth);
+  const role = String(user?.role || "").toLowerCase();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!["admin", "super_admin"].includes(role)) {
+    return (
+      <div className="route-error">
+        <Result
+          status="403"
+          title="Không có quyền truy cập"
+          subTitle="Tài khoản hiện tại không thuộc nhóm quản trị hệ thống."
+          extra={
+            <Link to="/">
+              <Button type="primary">Về trang chủ</Button>
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
+
+  return <AdminPage />;
+};
+
 const RouteError = () => {
   const error = useRouteError();
-
   return (
     <div className="route-error">
       <Result
         status="error"
         title="Có lỗi khi tải trang"
-        subTitle={
-          error?.message || "Vui lòng tải lại trang hoặc quay về bảng tin."
-        }
+        subTitle={error?.message || "Vui lòng tải lại trang hoặc quay về bảng tin."}
         extra={
           <Link to="/">
             <Button type="primary">Về bảng tin</Button>
@@ -67,131 +87,49 @@ const RouteError = () => {
   );
 };
 
-const router = createBrowserRouter(
-  [
-    {
-      path: "/",
-      element: <App />,
-      errorElement: <RouteError />,
-      children: [
-        {
-          index: true,
-          element: withSuspense(<HomePage />),
-        },
-        {
-          path: "friends",
-          element: withSuspense(<UserPage />),
-        },
-        {
-          path: "user",
-          element: withSuspense(<UserPage />),
-        },
-        {
-          path: "profile",
-          element: <ProfileRedirect />,
-        },
-        {
-          path: "profile/:userId",
-          element: withSuspense(<UserProfilePage />),
-        },
-        {
-          path: "search",
-          element: withSuspense(<SearchPage />),
-        },
-        {
-          path: "chat",
-          element: withSuspense(<ChatPage />),
-        },
-        {
-          path: "notifications",
-          element: withSuspense(<NotificationPage />),
-          path: "groups",
-          element: withSuspense(<GroupsPage />),
-        },
-        {
-          path: "groups/:groupId",
-          element: withSuspense(<GroupsPage />),
-        },
-      ],
-    },
-    {
-      path: "register",
-      element: withSuspense(<RegisterPage />),
-      errorElement: <RouteError />,
-    },
-    {
-      path: "login",
-      element: withSuspense(<LoginPage />),
-      errorElement: <RouteError />,
-    },
-    {
-      path: "forgot-password",
-      element: withSuspense(<ForgotPasswordPage />),
-      errorElement: <RouteError />,
-    },
-  ],
-  {
-    future: {
-      v7_startTransition: true,
-    },
-  },
-);
-
-ReactDOM.createRoot(document.getElementById("root")).render(
-  <Provider store={store}>
-    <SocketProvider>
-      <RouterProvider router={router} />
-    </SocketProvider>
-  </Provider>,
-import { Provider } from "react-redux";
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
-import App from "./App.jsx";
-import store from "./Redux/store.js";
-import "./styles/global.css";
-import ForgotPasswordPage from "./pages/forgot-password.jsx";
-import HomePage from "./pages/home.jsx";
-import LoginPage from "./pages/login.jsx";
-import ProfilePage from "./pages/profile.jsx";
-import RegisterPage from "./pages/register.jsx";
-import UserPage from "./pages/user.jsx";
-
 const router = createBrowserRouter([
   {
     path: "/",
     element: <App />,
+    errorElement: <RouteError />,
     children: [
-      {
-        index: true,
-        element: <HomePage />,
-      },
-      {
-        path: "user",
-        element: <UserPage />,
-      },
-      {
-        path: "profile",
-        element: <ProfilePage />,
-      },
+      { index: true, element: <HomePage /> },
+      { path: "friends", element: <UserPage /> },
+      { path: "user", element: <UserPage /> },
+      { path: "profile", element: <ProfileRedirect /> },
+      { path: "profile/:userId", element: <UserProfilePage /> },
+      { path: "search", element: <SearchPage /> },
+      { path: "chat", element: <ChatPage /> },
+      { path: "notifications", element: <NotificationPage /> },
+      { path: "saved", element: <SavedPage /> },
+      { path: "groups", element: <GroupsPage /> },
+      { path: "groups/:groupId", element: <GroupsPage /> },
+      { path: "account/security", element: <SecurityPage /> },
+      { path: "admin", element: <AdminRoute /> },
     ],
   },
+  { path: "/register", element: <RegisterPage />, errorElement: <RouteError /> },
+  { path: "/login", element: <LoginPage />, errorElement: <RouteError /> },
+  { path: "/login/verify-2fa", element: <VerifyTwoFactorPage />, errorElement: <RouteError /> },
+  { path: "/verify-email", element: <VerifyEmailPage />, errorElement: <RouteError /> },
   {
-    path: "login",
-    element: <LoginPage />,
-  },
-  {
-    path: "register",
-    element: <RegisterPage />,
-  },
-  {
-    path: "forgot-password",
+    path: "/forgot-password",
     element: <ForgotPasswordPage />,
+    errorElement: <RouteError />,
+  },
+  {
+    path: "/reset-password",
+    element: <ResetPasswordPage />,
+    errorElement: <RouteError />,
   },
 ]);
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <Provider store={store}>
-      <RouterProvider router={router} />
+      <SocketProvider>
+        <RouterProvider router={router} />
+      </SocketProvider>
     </Provider>
   </React.StrictMode>,
 );

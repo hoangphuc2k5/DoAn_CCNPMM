@@ -1,12 +1,17 @@
 import { useState } from "react";
-import { Empty, Button, Spin, Image } from "antd";
+import { Button, Empty, Image, Spin } from "antd";
 import {
   LoadingOutlined,
-  PlayCircleFilled,
   PictureOutlined,
+  PlayCircleFilled,
   PlusOutlined,
 } from "@ant-design/icons";
+import { getMediaUrl } from "../../util/media";
 import "../../styles/user-profile.css";
+
+const PILLS = ["Tất cả", "Ảnh", "Video", "Gần đây"];
+
+const isVideoUrl = (url = "") => /\.(mp4|mov|avi|mkv|webm)$/i.test(url);
 
 const MediaGrid = ({
   media = [],
@@ -18,37 +23,25 @@ const MediaGrid = ({
 }) => {
   const [activePill, setActivePill] = useState("Tất cả");
 
-  const pills = [
-    "Tất cả",
-    "Thiết kế",
-    "Tutorial",
-    "Typography",
-    "Cảm hứng",
-    "Motion",
-  ];
-import { LoadingOutlined } from "@ant-design/icons";
-import { getMediaUrl } from "../../util/media";
-
   if (loading && media.length === 0) {
     return (
       <div style={{ textAlign: "center", padding: "60px 0" }}>
-        <Spin indicator={<LoadingOutlined style={{ fontSize: 48, color: "#7F00FD" }} spin />} />
+        <Spin
+          indicator={<LoadingOutlined style={{ fontSize: 48, color: "#7F00FD" }} spin />}
+        />
       </div>
     );
   }
 
-  // Determine if a media item should be rendered as video
-  const isVideoItem = (item, idx) => {
-    if (item.url && (item.url.endsWith(".mp4") || item.url.endsWith(".webm") || item.url.endsWith(".mov"))) {
-      return true;
-    }
-    // Simulate some videos based on index to match mockup exactly
-    return idx % 3 === 2;
-  };
+  const filteredMedia = media.filter((item) => {
+    const type = item.type || (isVideoUrl(item.url) ? "video" : "image");
+    if (activePill === "Ảnh") return type === "image";
+    if (activePill === "Video") return type === "video";
+    return true;
+  });
 
   return (
     <div>
-      {/* Header bar: Titles & count */}
       <div className="album-tab-header">
         <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
           <Button
@@ -60,21 +53,35 @@ import { getMediaUrl } from "../../util/media";
               fontWeight: 700,
             }}
           >
-            Tất cả ảnh
+            Tất cả media
           </Button>
-          <span style={{ fontSize: "15px", fontWeight: 700, color: "#65676b", cursor: "pointer" }}>
+          <span
+            style={{
+              fontSize: "15px",
+              fontWeight: 700,
+              color: "#65676b",
+            }}
+          >
             Album
           </span>
         </div>
         <span style={{ fontSize: "14px", fontWeight: 700, color: "#8c8c8c" }}>
-          {media.length} mục
+          {filteredMedia.length} mục
         </span>
       </div>
 
-      {/* Pills bar & add button */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", gap: "10px" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "20px",
+          gap: "10px",
+          flexWrap: "wrap",
+        }}
+      >
         <div className="album-categories-bar">
-          {pills.map((pill) => (
+          {PILLS.map((pill) => (
             <Button
               key={pill}
               className={`btn-filter-pill ${activePill === pill ? "active" : ""}`}
@@ -83,41 +90,9 @@ import { getMediaUrl } from "../../util/media";
               {pill}
             </Button>
           ))}
-      <Image.PreviewGroup>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-            gap: "12px",
-          }}
-        >
-          {media.map((item, idx) => {
-            const type = item.type || (/\.(mp4|mov|avi|mkv|webm)$/i.test(item.url) ? "video" : "image");
-            const src = getMediaUrl(item.url);
-
-            return type === "video" ? (
-              <video
-                key={`${src}-${idx}`}
-                src={src}
-                controls
-                style={{
-                  width: "100%",
-                  height: "200px",
-                  objectFit: "cover",
-                  borderRadius: "8px",
-                }}
-              />
-            ) : (
-              <Image
-                key={`${src}-${idx}`}
-                src={src}
-                alt={`media-${idx}`}
-                style={{ height: "200px", objectFit: "cover" }}
-              />
-            );
-          })}
         </div>
-        {isOwnProfile && (
+
+        {isOwnProfile ? (
           <Button
             type="primary"
             shape="circle"
@@ -133,23 +108,33 @@ import { getMediaUrl } from "../../util/media";
             }}
             onClick={onAddMediaClick}
           />
-        )}
+        ) : null}
       </div>
 
-      {/* Media Grid */}
-      {media.length === 0 ? (
+      {filteredMedia.length === 0 ? (
         <Empty description="Chưa có ảnh hoặc video nào trong album" />
       ) : (
         <Image.PreviewGroup>
           <div className="album-grid-layout">
-            {media.map((item, idx) => {
-              const isVideo = isVideoItem(item, idx);
+            {filteredMedia.map((item, idx) => {
+              const src = getMediaUrl(item.url);
+              const type = item.type || (isVideoUrl(item.url) ? "video" : "image");
+
               return (
-                <div key={idx} className="album-item-container">
-                  {isVideo && <PlayCircleFilled className="album-play-icon" />}
-                  {item.url ? (
+                <div key={`${src}-${idx}`} className="album-item-container">
+                  {type === "video" ? (
+                    <div className="album-item-placeholder">
+                      <video
+                        src={src}
+                        controls
+                        className="album-item-image"
+                        style={{ objectFit: "cover" }}
+                      />
+                      <PlayCircleFilled className="album-play-icon" />
+                    </div>
+                  ) : item.url ? (
                     <Image
-                      src={item.url}
+                      src={src}
                       alt={`album-media-${idx}`}
                       className="album-item-image"
                       fallback="https://placehold.co/400x400/1e293b/ffffff?text=Image"
@@ -168,13 +153,18 @@ import { getMediaUrl } from "../../util/media";
         </Image.PreviewGroup>
       )}
 
-      {hasNextPage && (
+      {hasNextPage ? (
         <div style={{ marginTop: "24px", textAlign: "center" }}>
-          <Button block onClick={onLoadMore} loading={loading} style={{ borderRadius: "12px", height: "40px", fontWeight: 700 }}>
+          <Button
+            block
+            onClick={onLoadMore}
+            loading={loading}
+            style={{ borderRadius: "12px", height: "40px", fontWeight: 700 }}
+          >
             Tải thêm
           </Button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };

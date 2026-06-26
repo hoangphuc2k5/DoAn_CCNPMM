@@ -716,7 +716,6 @@ const UserProfilePage = () => {
             />
           )}
         </div>
-      </Card>
     </div>
   );
 };

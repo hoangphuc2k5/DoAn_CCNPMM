@@ -1,22 +1,19 @@
-import { Button, Spin, Empty } from "antd";
+import { Button, Card, Empty, Image, Spin, Typography } from "antd";
 import {
+  GlobalOutlined,
+  HeartFilled,
   LoadingOutlined,
+  LockOutlined,
+  MessageFilled,
   PictureOutlined,
   PlaySquareOutlined,
-  HeartFilled,
-  MessageFilled,
-  ShareAltOutlined,
   PlusOutlined,
   PushpinFilled,
-  LockOutlined,
-  GlobalOutlined,
+  ShareAltOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
 import { getMediaUrl } from "../../util/media";
 import "../../styles/user-profile.css";
-import { Card, Empty, Button, Spin, Image } from "antd";
-import { LoadingOutlined } from "@ant-design/icons";
-import { getMediaUrl } from "../../util/media";
 
 const normalizeMedia = (media = []) =>
   media
@@ -32,43 +29,14 @@ const normalizeMedia = (media = []) =>
     })
     .filter(Boolean);
 
-const renderPostContent = (text = "") => {
-  if (!text) return "";
-  
-  // Matches @[Display Name](emailPrefix)
-  const regex = /@\[([^\]]+)\]\(([^)]+)\)/g;
-  const parts = [];
-  let lastIndex = 0;
-  let match;
-  
-  while ((match = regex.exec(text)) !== null) {
-    const matchIndex = match.index;
-    if (matchIndex > lastIndex) {
-      parts.push(text.substring(lastIndex, matchIndex));
-    }
-    
-    const displayName = match[1];
-    parts.push(
-      <span 
-        key={matchIndex} 
-        className="text-blue-600 font-bold hover:underline cursor-pointer"
-        style={{ color: "#1890ff", fontWeight: "bold" }}
-      >
-        {displayName}
-      </span>
-    );
-    lastIndex = regex.lastIndex;
-  }
-  
-  if (lastIndex < text.length) {
-    parts.push(text.substring(lastIndex));
-  }
-  
-  return parts.length > 0 ? parts : text;
+const getVisibilityIcon = (visibility) => {
+  if (visibility === "friends") return <TeamOutlined />;
+  if (visibility === "private") return <LockOutlined />;
+  return <GlobalOutlined />;
 };
 
 const PostsList = ({
-  posts,
+  posts = [],
   loading,
   hasNextPage,
   onLoadMore,
@@ -80,158 +48,143 @@ const PostsList = ({
   if (loading && posts.length === 0) {
     return (
       <div style={{ textAlign: "center", padding: "60px 0" }}>
-        <Spin indicator={<LoadingOutlined style={{ fontSize: 48, color: "#7F00FD" }} spin />} />
+        <Spin
+          indicator={<LoadingOutlined style={{ fontSize: 48, color: "#7F00FD" }} spin />}
+        />
       </div>
     );
   }
-
-  if (!loading && posts.length === 0) {
-    return (
-      <div className="posts-grid-container">
-        <div className="posts-tab-header">
-          <h2 className="posts-count-title">0 bài viết</h2>
-          {isOwnProfile && (
-            <div className="posts-header-actions">
-              <Button className="btn-post-action" icon={<PictureOutlined />} onClick={onAddPostClick}>
-                Thêm ảnh
-              </Button>
-              <Button className="btn-post-action" icon={<PlaySquareOutlined />} onClick={onAddPostClick}>
-                Thêm video
-              </Button>
-            </div>
-          )}
-        </div>
-        <Empty description="Chưa có bài viết nào" />
-        {isOwnProfile && (
-          <Button
-            type="primary"
-            className="floating-action-button"
-            icon={<PlusOutlined />}
-            onClick={onAddPostClick}
-          />
-        )}
-      </div>
-    );
-  }
-
-  // Get first image or media if available in post
-  const getPostMedia = (post) => {
-    if (post.media && post.media.length > 0) {
-      return getMediaUrl(post.media[0]);
-    }
-    return null;
-  };
 
   return (
     <div className="posts-grid-container">
-      {/* Header bar: Count & add buttons */}
       <div className="posts-tab-header">
         <h2 className="posts-count-title">{posts.length} bài viết</h2>
-        {isOwnProfile && (
+        {isOwnProfile ? (
           <div className="posts-header-actions">
-            <Button className="btn-post-action" icon={<PictureOutlined />} onClick={onAddPostClick}>
+            <Button
+              className="btn-post-action"
+              icon={<PictureOutlined />}
+              onClick={onAddPostClick}
+            >
               Thêm ảnh
             </Button>
-            <Button className="btn-post-action" icon={<PlaySquareOutlined />} onClick={onAddPostClick}>
+            <Button
+              className="btn-post-action"
+              icon={<PlaySquareOutlined />}
+              onClick={onAddPostClick}
+            >
               Thêm video
             </Button>
           </div>
-        )}
+        ) : null}
       </div>
 
-      {/* Grid of posts */}
-      <div className="posts-cards-grid">
-        {posts.map((post) => {
-          const mediaUrl = getPostMedia(post);
-          return (
-          <p>{post.content}</p>
-          {normalizeMedia(post.media).length > 0 && (
-            <div
-              key={post._id}
-              className="post-item-card"
-              onClick={() => onPostClick?.(post)}
-            >
-              <div className="post-card-thumb-wrapper relative">
-                {post.isPinned && (
-                  <div className="absolute top-2 left-2 z-10 bg-purple-600 text-white rounded-full px-2 py-0.5 text-xs flex items-center gap-1 font-semibold shadow-md">
-                    <PushpinFilled style={{ fontSize: "10px" }} /> Đã ghim
-                  </div>
-                )}
-                {mediaUrl ? (
-                  <img src={mediaUrl} className="post-card-image" alt="Post thumbnail" />
-                ) : (
-                  <div className="post-card-thumb-circle">
-                    <PictureOutlined style={{ fontSize: 24, color: "#a0a5b0" }} />
-                  </div>
-                )}
-              </div>
-              <div className="post-card-body">
-                <h3 className="post-card-title">{renderPostContent(post.content)}</h3>
-                <div className="post-card-footer">
-                  <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
-                    <span className="post-card-stat">
-                      <HeartFilled style={{ color: "#ff4d4f" }} />
-                      {post.stats?.reactions || 0}
-                    </span>
-                    <span className="post-card-stat">
-                      <MessageFilled style={{ color: "#7F00FD" }} />
-                      {post.stats?.comments || 0}
-                    </span>
-                    <span className="post-card-stat text-gray-400" title={post.visibility === "friends" ? "Bạn bè" : post.visibility === "private" ? "Riêng tư" : "Công khai"}>
-                      {post.visibility === "friends" ? <TeamOutlined /> : post.visibility === "private" ? <LockOutlined /> : <GlobalOutlined />}
-                    </span>
-                  </div>
-                  <button
-                    className="post-card-share-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onShareClick?.(post);
-                    }}
-                  >
-                    <ShareAltOutlined />
-                  </button>
+      {posts.length === 0 ? (
+        <Empty description="Chưa có bài viết nào" />
+      ) : (
+        <div className="posts-cards-grid">
+          {posts.map((post) => {
+            const mediaItems = normalizeMedia(post.media);
+            const hero = mediaItems[0];
+            const heroUrl = hero?.url ? getMediaUrl(hero.url) : "";
+
+            return (
+              <Card
+                key={post._id}
+                className="post-item-card"
+                hoverable
+                onClick={() => onPostClick?.(post)}
+              >
+                <div className="post-card-thumb-wrapper relative">
+                  {post.isPinned ? (
+                    <div className="absolute top-2 left-2 z-10 bg-purple-600 text-white rounded-full px-2 py-0.5 text-xs flex items-center gap-1 font-semibold shadow-md">
+                      <PushpinFilled style={{ fontSize: "10px" }} /> Đã ghim
+                    </div>
+                  ) : null}
+
+                  {hero ? (
+                    hero.type === "video" ? (
+                      <video
+                        src={heroUrl}
+                        controls
+                        className="post-card-image"
+                        style={{ width: "100%", borderRadius: "12px", objectFit: "cover" }}
+                      />
+                    ) : (
+                      <Image
+                        src={heroUrl}
+                        alt="Post thumbnail"
+                        className="post-card-image"
+                        preview={false}
+                      />
+                    )
+                  ) : (
+                    <div className="post-card-thumb-circle">
+                      <PictureOutlined style={{ fontSize: 24, color: "#a0a5b0" }} />
+                    </div>
+                  )}
                 </div>
-              </div>
-              {normalizeMedia(post.media).map((item, idx) => {
-                const src = getMediaUrl(item.url);
-                return item.type === "video" ? (
-                  <video
-                    key={`${src}-${idx}`}
-                    src={src}
-                    controls
-                    style={{ maxWidth: "240px", height: "auto", borderRadius: "8px" }}
-                  />
-                ) : (
-                  <Image
-                    key={`${src}-${idx}`}
-                    src={src}
-                    alt={item.originalName || "media"}
-                    style={{ maxWidth: "200px", height: "auto", borderRadius: "8px" }}
-                  />
-                );
-              })}
-            </div>
-          );
-        })}
-      </div>
 
-      {hasNextPage && (
-        <div style={{ textAlign: "center", marginBottom: "20px" }}>
-          <Button block onClick={onLoadMore} loading={loading} style={{ borderRadius: "12px", height: "40px", fontWeight: 700 }}>
-            Tải thêm
-          </Button>
+                <div className="post-card-body">
+                  <Typography.Paragraph className="post-card-title" ellipsis={{ rows: 3 }}>
+                    {post.content || "Bài viết không có nội dung"}
+                  </Typography.Paragraph>
+
+                  <div className="post-card-footer">
+                    <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+                      <span className="post-card-stat">
+                        <HeartFilled style={{ color: "#ff4d4f" }} />
+                        {post.stats?.reactions || 0}
+                      </span>
+                      <span className="post-card-stat">
+                        <MessageFilled style={{ color: "#7F00FD" }} />
+                        {post.stats?.comments || 0}
+                      </span>
+                      <span
+                        className="post-card-stat text-gray-400"
+                        title={post.visibility || "public"}
+                      >
+                        {getVisibilityIcon(post.visibility)}
+                      </span>
+                    </div>
+                    <button
+                      className="post-card-share-btn"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onShareClick?.(post);
+                      }}
+                    >
+                      <ShareAltOutlined />
+                    </button>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
 
-      {/* Floating Action Button (FAB) */}
-      {isOwnProfile && (
+      {hasNextPage ? (
+        <div style={{ textAlign: "center", marginBottom: "20px" }}>
+          <Button
+            block
+            onClick={onLoadMore}
+            loading={loading}
+            style={{ borderRadius: "12px", height: "40px", fontWeight: 700 }}
+          >
+            Tải thêm
+          </Button>
+        </div>
+      ) : null}
+
+      {isOwnProfile ? (
         <Button
           type="primary"
           className="floating-action-button"
           icon={<PlusOutlined />}
           onClick={onAddPostClick}
         />
-      )}
+      ) : null}
     </div>
   );
 };
