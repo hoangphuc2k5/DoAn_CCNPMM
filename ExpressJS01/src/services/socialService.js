@@ -3,14 +3,19 @@ const Block = require("../models/block");
 const Comment = require("../models/comment");
 const Follow = require("../models/follow");
 const Friendship = require("../models/friendship");
+const HiddenItem = require("../models/hiddenItem");
 const Notification = require("../models/notification");
 const Post = require("../models/post");
 const Reaction = require("../models/reaction");
 const Report = require("../models/report");
+const Group = require("../models/group");
 const User = require("../models/user");
 const { createNotification } = require("./notificationService");
+const { processPostMediaFiles, removeStoredMediaFiles } = require("./mediaService");
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
+const idOf = (value) => String(value?._id || value);
+const isSameId = (a, b) => idOf(a) === idOf(b);
 
 const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -63,6 +68,59 @@ const hasBlockBetween = async (userA, userB) => {
   return Boolean(block);
 };
 
+const isGroupMember = (group, userId) =>
+  group.members?.some((memberId) => isSameId(memberId, userId));
+
+const isGroupAdmin = (group, userId) =>
+  isSameId(group.createdBy, userId) ||
+  group.admins?.some((adminId) => isSameId(adminId, userId));
+
+const isGroupModerator = (group, userId) =>
+  group.moderators?.some((moderatorId) => isSameId(moderatorId, userId));
+
+const canModerateGroup = (group, userId) =>
+  isGroupAdmin(group, userId) || isGroupModerator(group, userId);
+
+const getPostGroup = async (post) => {
+  if (!post?.group) return null;
+  return Group.findById(post.group);
+};
+
+const canInteractWithPost = async (post, userId) => {
+  const group = await getPostGroup(post);
+  if (!group) return { allowed: true, group: null };
+  return { allowed: isGroupMember(group, userId), group };
+};
+
+const canViewPost = async (post, userId) => {
+  const group = await getPostGroup(post);
+  if (!group) return { allowed: true, group: null };
+  if (group.privacy === "private" && !isGroupMember(group, userId)) {
+    return { allowed: false, group };
+  }
+  if (post.visibility === "group" && !isGroupMember(group, userId)) {
+    return { allowed: false, group };
+  }
+  if (post.approvalStatus && post.approvalStatus !== "published") {
+    return { allowed: false, group };
+  }
+  return { allowed: true, group };
+};
+
+const createNotification = async ({ recipient, actor, type, post, comment, metadata = {} }) => {
+  if (!recipient || (actor && String(recipient) === String(actor))) return null;
+  if (actor && (await hasBlockBetween(recipient, actor))) return null;
+
+  return Notification.create({
+    recipient,
+    actor,
+    type,
+    post: post || null,
+    comment: comment || null,
+    metadata,
+  });
+};
+
 const notifyMentionedUsers = async ({ users, actor, type, post, comment }) => {
   await Promise.all(
     users.map((user) =>
@@ -79,6 +137,7 @@ const notifyMentionedUsers = async ({ users, actor, type, post, comment }) => {
 
 const decoratePosts = async (posts, currentUserId) => {
   const postIds = posts.map((post) => post._id);
+  const hiddenCommentIds = (await getHiddenItemIds(currentUserId, "comment")).map(String);
   const comments = await Comment.find({ post: { $in: postIds }, deletedAt: null })
     .sort({ createdAt: 1 })
     .populate("author", "name email avatar")
@@ -87,7 +146,11 @@ const decoratePosts = async (posts, currentUserId) => {
 
   return posts.map((post) => {
     const postObject = post.toObject ? post.toObject() : post;
-    const postComments = comments.filter((comment) => String(comment.post) === String(post._id));
+    const postComments = comments.filter(
+      (comment) =>
+        String(comment.post) === String(post._id) &&
+        !hiddenCommentIds.includes(String(comment._id)),
+    );
     const topComments = postComments
       .filter((comment) => !comment.parentComment)
       .map((comment) => ({
@@ -171,18 +234,24 @@ const getBlockedUserIds = async (userId) => {
   );
 };
 
-const createPost = async (userId, payload) => {
-  const content = payload.content?.trim();
+const getHiddenItemIds = async (userId, targetType) =>
+  HiddenItem.find({ user: userId, targetType }).distinct("targetId");
+
+const createPost = async (userId, payload, files = []) => {
+  const content = payload.content?.trim() || (files.length ? " " : "");
   if (!content) return { EC: 1, EM: "Nội dung bài viết không được rỗng" };
 
-  const mentionedUsers = await findMentionedUsers(content);
+  const media = await processPostMediaFiles(files, userId);
+  const mentionedUsers = await findMentionedUsers(content.trim());
   const post = await Post.create({
     author: userId,
-    content,
+    content: content.trim(),
     visibility: payload.visibility || "public",
     mentions: mentionedUsers.map((user) => user._id),
     hashtags: extractHashtags(content),
     media: payload.media || [],
+    hashtags: extractHashtags(content.trim()),
+    media,
   });
 
 
@@ -205,14 +274,18 @@ const getFeed = async (userId, query) => {
   const mode = query.mode || "latest";
   const friendUserIds = await getFriendUserIds(userId);
   const blockedUserIds = await getBlockedUserIds(userId);
+  const hiddenPostIds = await getHiddenItemIds(userId, "post");
 
   const filter = {
+    _id: { $nin: hiddenPostIds },
     author: { $nin: blockedUserIds.map(toObjectId) },
     $or: [
       { visibility: "public" },
       { visibility: "friends", author: { $in: friendUserIds.map(toObjectId) } },
       { author: userId }
     ],
+    group: null,
+    $or: [{ visibility: "public" }, { author: userId }],
   };
 
   if (mode === "friends") {
@@ -264,8 +337,9 @@ const getFeed = async (userId, query) => {
 
 const getPostById = async (userId, postId) => {
   const blockedUserIds = await getBlockedUserIds(userId);
+  const hiddenPostIds = await getHiddenItemIds(userId, "post");
   const post = await Post.findOne({
-    _id: postId,
+    _id: { $nin: hiddenPostIds, $eq: postId },
     author: { $nin: blockedUserIds.map(toObjectId) },
   })
     .populate("author", "name email avatar")
@@ -279,6 +353,11 @@ const getPostById = async (userId, postId) => {
     return { EC: 1, EM: "Không tìm thấy bài viết" };
   }
 
+  const access = await canViewPost(post, userId);
+  if (!access.allowed) {
+    return { EC: 2, EM: "Ban can tham gia nhom de xem bai viet" };
+  }
+
   const [data] = await decoratePosts([post], userId);
   return { EC: 0, data };
 };
@@ -288,6 +367,9 @@ const reactPost = async (userId, postId, type = "like") => {
   const post = await Post.findById(postId);
   if (!post) return { EC: 1, EM: "Không tìm thấy bài viết" };
   if (await hasBlockBetween(userId, post.author)) return { EC: 2, EM: "Không thể tương tác" };
+
+  const access = await canInteractWithPost(post, userId);
+  if (!access.allowed) return { EC: 3, EM: "Ban can la thanh vien nhom de tuong tac" };
 
   const existing = await Reaction.findOne({ post: postId, user: userId });
   if (existing && existing.type === reactionType) {
@@ -319,9 +401,21 @@ const commentPost = async (userId, postId, content, parentComment = null) => {
   const post = await Post.findById(postId);
   if (!post) return { EC: 1, EM: "Không tìm thấy bài viết" };
   if (await hasBlockBetween(userId, post.author)) return { EC: 2, EM: "Không thể bình luận" };
+  const access = await canInteractWithPost(post, userId);
+  if (!access.allowed) return { EC: 4, EM: "Ban can la thanh vien nhom de binh luan" };
 
   const trimmed = content?.trim();
   if (!trimmed) return { EC: 3, EM: "Nội dung bình luận không được rỗng" };
+
+  if (parentComment) {
+    const parent = await Comment.findOne({
+      _id: parentComment,
+      post: postId,
+      parentComment: null,
+      deletedAt: null,
+    });
+    if (!parent) return { EC: 5, EM: "Khong tim thay binh luan can tra loi" };
+  }
 
   const mentionedUsers = await findMentionedUsers(trimmed);
   const comment = await Comment.create({
@@ -364,10 +458,138 @@ const commentPost = async (userId, postId, content, parentComment = null) => {
   return { EC: 0, EM: "Đã bình luận", data };
 };
 
+const deleteComment = async (userId, commentId) => {
+  const comment = await Comment.findById(commentId);
+  if (!comment || comment.deletedAt) return { EC: 1, EM: "Khong tim thay binh luan" };
+
+  const post = await Post.findById(comment.post);
+  if (!post) return { EC: 2, EM: "Khong tim thay bai viet" };
+
+  const group = await getPostGroup(post);
+  const canDelete =
+    isSameId(comment.author, userId) ||
+    isSameId(post.author, userId) ||
+    (group && canModerateGroup(group, userId));
+
+  if (!canDelete) return { EC: 3, EM: "Ban khong co quyen xoa binh luan nay" };
+
+  const deleteFilter = {
+    deletedAt: null,
+    $or: [{ _id: comment._id }, { parentComment: comment._id }],
+  };
+  const deletedCount = await Comment.countDocuments(deleteFilter);
+  await Comment.updateMany(deleteFilter, { deletedAt: new Date() });
+  await Post.findByIdAndUpdate(post._id, {
+    $inc: { "stats.comments": -deletedCount },
+  });
+
+  return { EC: 0, EM: "Da xoa binh luan", data: { deletedCount } };
+};
+
+const deletePost = async (userId, postId) => {
+  const post = await Post.findById(postId);
+  if (!post) return { EC: 1, EM: "Khong tim thay bai viet" };
+
+  const group = await getPostGroup(post);
+  const canDelete = isSameId(post.author, userId) || (group && canModerateGroup(group, userId));
+  if (!canDelete) return { EC: 2, EM: "Ban khong co quyen xoa bai viet nay" };
+
+  await Promise.all([
+    Comment.updateMany({ post: postId, deletedAt: null }, { deletedAt: new Date() }),
+    Reaction.deleteMany({ post: postId }),
+    Post.deleteOne({ _id: postId }),
+    removeStoredMediaFiles(post.media),
+  ]);
+
+  return { EC: 0, EM: "Da xoa bai viet" };
+};
+
+const hideTarget = async ({ userId, targetType, targetId }) => {
+  if (!["post", "comment"].includes(targetType)) {
+    return { EC: 1, EM: "Loai noi dung khong hop le" };
+  }
+
+  if (targetType === "post") {
+    const post = await Post.findById(targetId);
+    if (!post) return { EC: 2, EM: "Khong tim thay bai viet" };
+    if (isSameId(post.author, userId)) return { EC: 3, EM: "Khong the an bai viet cua minh" };
+
+    const access = await canViewPost(post, userId);
+    if (!access.allowed) return { EC: 4, EM: "Ban khong co quyen xem bai viet nay" };
+  }
+
+  if (targetType === "comment") {
+    const comment = await Comment.findById(targetId);
+    if (!comment || comment.deletedAt) return { EC: 5, EM: "Khong tim thay binh luan" };
+    if (isSameId(comment.author, userId)) {
+      return { EC: 6, EM: "Khong the an binh luan cua minh" };
+    }
+
+    const post = await Post.findById(comment.post);
+    if (!post) return { EC: 7, EM: "Khong tim thay bai viet" };
+    const access = await canViewPost(post, userId);
+    if (!access.allowed) return { EC: 8, EM: "Ban khong co quyen xem binh luan nay" };
+  }
+
+  const hiddenItem = await HiddenItem.findOneAndUpdate(
+    { user: userId, targetType, targetId },
+    { user: userId, targetType, targetId },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+
+  return { EC: 0, EM: "Da an noi dung", data: hiddenItem };
+};
+
+const updatePost = async (userId, postId, payload = {}) => {
+  const post = await Post.findById(postId);
+  if (!post) return { EC: 1, EM: "Khong tim thay bai viet" };
+  if (!isSameId(post.author, userId)) return { EC: 2, EM: "Chi tac gia moi duoc chinh sua bai viet" };
+
+  const content = payload.content?.trim() || "";
+  if (!content && !post.media?.length) {
+    return { EC: 3, EM: "Bai viet can co noi dung hoac tep dinh kem" };
+  }
+
+  const update = {
+    content,
+    hashtags: extractHashtags(content),
+  };
+
+  if (payload.visibility && ["public", "group"].includes(payload.visibility)) {
+    const group = await getPostGroup(post);
+    if (group?.privacy === "private" && payload.visibility === "public") {
+      return { EC: 4, EM: "Nhom rieng tu khong the dat bai cong khai" };
+    }
+    update.visibility = payload.visibility;
+  }
+
+  const mentionedUsers = await findMentionedUsers(content);
+  update.mentions = mentionedUsers.map((user) => user._id);
+
+  await Post.findByIdAndUpdate(postId, update);
+  const updatedPost = await Post.findById(postId)
+    .populate("author", "name email avatar")
+    .populate({
+      path: "sharedPost",
+      populate: { path: "author", select: "name email avatar" },
+    });
+  const [data] = await decoratePosts([updatedPost], userId);
+  return { EC: 0, EM: "Da cap nhat bai viet", data };
+};
+
 const sharePost = async (userId, postId, content = "") => {
   const sourcePost = await Post.findById(postId);
   if (!sourcePost) return { EC: 1, EM: "Không tìm thấy bài viết" };
   if (await hasBlockBetween(userId, sourcePost.author)) return { EC: 2, EM: "Không thể chia sẻ" };
+
+  const access = await canInteractWithPost(sourcePost, userId);
+  if (!access.allowed) return { EC: 3, EM: "Ban can la thanh vien nhom de chia se" };
+  if (access.group?.privacy === "private") {
+    return { EC: 4, EM: "Khong the chia se bai viet trong nhom rieng tu" };
+  }
+  if (sourcePost.visibility === "group") {
+    return { EC: 5, EM: "Khong the chia se bai viet chi hien thi trong nhom" };
+  }
 
   const sharedContent = content?.trim() || "Đã chia sẻ một bài viết";
   const mentionedUsers = await findMentionedUsers(sharedContent);
@@ -509,6 +731,26 @@ const unblockUser = async (userId, targetUserId) => {
 
 const reportTarget = async ({ reporter, targetType, targetId, reason }) => {
   if (!reason?.trim()) return { EC: 1, EM: "Vui lòng nhập lý do báo cáo" };
+  if (targetType === "user" && isSameId(reporter, targetId)) {
+    return { EC: 2, EM: "Khong the tu to cao chinh minh" };
+  }
+
+  if (targetType === "post") {
+    const post = await Post.findById(targetId).select("author");
+    if (!post) return { EC: 3, EM: "Khong tim thay bai viet" };
+    if (isSameId(post.author, reporter)) {
+      return { EC: 4, EM: "Khong the tu to cao bai viet cua minh" };
+    }
+  }
+
+  if (targetType === "comment") {
+    const comment = await Comment.findById(targetId).select("author deletedAt");
+    if (!comment || comment.deletedAt) return { EC: 5, EM: "Khong tim thay binh luan" };
+    if (isSameId(comment.author, reporter)) {
+      return { EC: 6, EM: "Khong the tu to cao binh luan cua minh" };
+    }
+  }
+
   const report = await Report.create({
     reporter,
     targetType,
@@ -693,12 +935,17 @@ module.exports = {
   blockUser,
   commentPost,
   createPost,
+  decoratePosts,
+  deleteComment,
+  deletePost,
   followUser,
   getFeed,
+  getHiddenItemIds,
   getNotifications,
   getPostById,
   getRelationships,
   getTrendingTopics,
+  hideTarget,
   markAllNotificationsRead,
   markNotificationRead,
   reactPost,

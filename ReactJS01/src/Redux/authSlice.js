@@ -133,7 +133,7 @@ const authSlice = createSlice({
         state.appLoading = false;
         state.isAuthenticated = false;
         state.user = null;
-        state.error = action.payload || "Không thể lấy thông tin.";
+        state.error = action.payload === "Chưa có token." ? "" : action.payload || "Không thể lấy thông tin.";
         localStorage.removeItem("access_token");
       })
       .addCase(forgotPasswordThunk.pending, (state) => {

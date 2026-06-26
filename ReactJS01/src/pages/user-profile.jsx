@@ -108,6 +108,8 @@ const UserProfilePage = () => {
     activeTab,
     postsCursor,
     mediaCursor,
+    postsHasNextPage,
+    mediaHasNextPage,
   } = useSelector((state) => state.userProfile);
 
   const { user: currentUser } = useSelector((state) => state.auth);
@@ -690,6 +692,31 @@ const UserProfilePage = () => {
           </div>
         )}
       </Modal>
+        <div style={{ marginTop: "20px" }}>
+          {activeTab === "posts" && (
+            <PostsList
+              posts={posts}
+              loading={loading}
+              hasNextPage={postsHasNextPage}
+              onLoadMore={handleLoadMorePosts}
+            />
+          )}
+          {activeTab === "friends" && (
+            <FriendsList friends={friends} loading={loading} />
+          )}
+          {activeTab === "followers" && (
+            <FollowersList followers={followers} loading={loading} />
+          )}
+          {activeTab === "media" && (
+            <MediaGrid
+              media={media}
+              loading={loading}
+              hasNextPage={mediaHasNextPage}
+              onLoadMore={handleLoadMoreMedia}
+            />
+          )}
+        </div>
+      </Card>
     </div>
   );
 };

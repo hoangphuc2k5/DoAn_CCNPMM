@@ -4,7 +4,11 @@ const pushService = require("../services/pushService");
 const currentUserId = (req) => req.user._id;
 
 const createPost = async (req, res) => {
-  const data = await socialService.createPost(currentUserId(req), req.body);
+  const data = await socialService.createPost(
+    currentUserId(req),
+    req.body,
+    req.files || [],
+  );
   return res.status(200).json(data);
 };
 
@@ -42,6 +46,49 @@ const replyComment = async (req, res) => {
     req.body.postId,
     req.body.content,
     req.params.commentId,
+  );
+  return res.status(200).json(data);
+};
+
+const deleteComment = async (req, res) => {
+  const data = await socialService.deleteComment(
+    currentUserId(req),
+    req.params.commentId,
+  );
+  return res.status(200).json(data);
+};
+
+const deletePost = async (req, res) => {
+  const data = await socialService.deletePost(
+    currentUserId(req),
+    req.params.postId,
+  );
+  return res.status(200).json(data);
+};
+
+const hidePost = async (req, res) => {
+  const data = await socialService.hideTarget({
+    userId: currentUserId(req),
+    targetType: "post",
+    targetId: req.params.postId,
+  });
+  return res.status(200).json(data);
+};
+
+const hideComment = async (req, res) => {
+  const data = await socialService.hideTarget({
+    userId: currentUserId(req),
+    targetType: "comment",
+    targetId: req.params.commentId,
+  });
+  return res.status(200).json(data);
+};
+
+const updatePost = async (req, res) => {
+  const data = await socialService.updatePost(
+    currentUserId(req),
+    req.params.postId,
+    req.body,
   );
   return res.status(200).json(data);
 };
@@ -105,6 +152,16 @@ const reportPost = async (req, res) => {
     reporter: currentUserId(req),
     targetType: "post",
     targetId: req.params.postId,
+    reason: req.body.reason,
+  });
+  return res.status(200).json(data);
+};
+
+const reportComment = async (req, res) => {
+  const data = await socialService.reportTarget({
+    reporter: currentUserId(req),
+    targetType: "comment",
+    targetId: req.params.commentId,
     reason: req.body.reason,
   });
   return res.status(200).json(data);
@@ -206,12 +263,16 @@ module.exports = {
   blockUser,
   commentPost,
   createPost,
+  deleteComment,
+  deletePost,
   followUser,
   getFeed,
   getNotifications,
   getPostById,
   getRelationships,
   getTrendingTopics,
+  hideComment,
+  hidePost,
   markAllNotificationsRead,
   markNotificationRead,
   getPushPublicKey,
@@ -219,6 +280,7 @@ module.exports = {
   unsubscribePush,
   reactPost,
   replyComment,
+  reportComment,
   reportPost,
   reportUser,
   respondFriendRequest,

@@ -8,6 +8,7 @@ const {
   getUserFollowersService,
   getUserFollowingService,
   getUserMediaService,
+  getUserMediaAlbumsService,
 } = require("../services/profileService");
 
 const getProfile = async (req, res) => {
@@ -107,6 +108,14 @@ const getUserFollowing = async (req, res) => {
   return res.status(data.EC === 0 ? 200 : 400).json(data);
 };
 
+const getUserMediaAlbums = async (req, res) => {
+  const { userId } = req.params;
+  const currentUserId = req.user?._id;
+
+  const data = await getUserMediaAlbumsService(userId, currentUserId);
+  return res.status(data.EC === 0 ? 200 : 400).json(data);
+};
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -117,4 +126,5 @@ module.exports = {
   getUserFollowers,
   getUserFollowing,
   getUserMedia,
+  getUserMediaAlbums,
 };

@@ -9,13 +9,28 @@ const postSchema = new mongoose.Schema(
     },
     content: {
       type: String,
-      required: true,
+      default: "",
       trim: true,
     },
     visibility: {
       type: String,
       enum: ["public", "friends", "private"],
+      enum: ["public", "friends", "group"],
       default: "public",
+    },
+    approvalStatus: {
+      type: String,
+      enum: ["published", "pending", "rejected"],
+      default: "published",
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      default: null,
+    },
+    reviewedAt: {
+      type: Date,
+      default: null,
     },
     mentions: [
       {
@@ -44,6 +59,12 @@ const postSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    group: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "group",
+      default: null,
+    },
+    media: [mongoose.Schema.Types.Mixed],
     stats: {
       reactions: { type: Number, default: 0 },
       comments: { type: Number, default: 0 },
@@ -54,6 +75,7 @@ const postSchema = new mongoose.Schema(
 );
 
 postSchema.index({ author: 1, createdAt: -1 });
+postSchema.index({ group: 1, createdAt: -1 });
 postSchema.index({ content: "text", hashtags: "text" });
 
 const Post = mongoose.model("post", postSchema);

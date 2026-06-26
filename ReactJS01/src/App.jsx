@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { Spin } from "antd";
 import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -9,6 +9,10 @@ import Header from "./components/layout/header";
 import { fetchAccountThunk } from "./Redux/authSlice";
 
 function App() {
+  const location = useLocation();
+  const dispatch = useDispatch();
+  const { appLoading } = useSelector((state) => state.auth);
+  const hideHeader = location.pathname.startsWith("/groups");
   const dispatch = useDispatch();
   const { appLoading } = useSelector((state) => state.auth);
 
@@ -32,6 +36,13 @@ function App() {
       <main className="app-main-content">
         <Outlet />
       </main>
+    <div className="min-h-screen bg-white">
+      <Header />
+      <Outlet />
+    <>
+      {hideHeader ? null : <Header />}
+      <Outlet />
+    </>
     <div className="min-h-screen bg-white">
       <Header />
       <Outlet />

@@ -8,6 +8,7 @@ import {
   Drawer,
   Dropdown,
   Empty,
+  Image,
   Input,
   List,
   Modal,
@@ -17,16 +18,22 @@ import {
   Spin,
   Tag,
   Typography,
+  Upload,
   message,
 } from "antd";
 import {
   BellOutlined,
   CommentOutlined,
+  DeleteOutlined,
+  EditOutlined,
   EllipsisOutlined,
+  EyeInvisibleOutlined,
   FlagOutlined,
   GlobalOutlined,
   HomeOutlined,
   LikeFilled,
+  LikeOutlined,
+  PictureOutlined,
   RetweetOutlined,
   StopOutlined,
   TeamOutlined,
@@ -47,6 +54,8 @@ import {
   followUserApi,
   friendRequestApi,
   getFeedApi,
+  hideCommentApi,
+  hidePostApi,
   getNotificationsApi,
   getPostByIdApi,
   getTrendingApi,
@@ -54,6 +63,7 @@ import {
   markNotificationReadApi,
   reactPostApi,
   replyCommentApi,
+  reportCommentApi,
   reportPostApi,
   sharePostApi,
   updatePostApi,
@@ -64,6 +74,12 @@ import { getMediaUrl } from "../util/media";
 import CreatePostModal from "../components/profile/CreatePostModal";
 import MentionInput from "../components/ui/MentionInput";
 import { getNotificationTargetUrl } from "../util/notification";
+  deletePostApi,
+  updatePostApi,
+} from "../util/api";
+import { getMediaUrl } from "../util/media";
+import CreatePostComposer from "../components/post/CreatePostComposer";
+import PostCommentsModal from "../components/post/PostCommentsModal";
 
 const REACTIONS = [
   { type: "like",  emoji: "👍", label: "Thích",    color: "#1877f2" },
@@ -219,6 +235,20 @@ const renderPostContent = (text = "") => {
   return parts.length > 0 ? parts : text;
 };
 
+const normalizePostMedia = (media = []) =>
+  media
+    .map((item) => {
+      if (!item) return null;
+      if (typeof item === "string") {
+        return {
+          url: item,
+          type: /\.(mp4|mov|avi|mkv|webm)$/i.test(item) ? "video" : "image",
+        };
+      }
+      return item;
+    })
+    .filter(Boolean);
+
 const HomePage = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -232,7 +262,9 @@ const HomePage = () => {
   const [createPostVisible, setCreatePostVisible] = useState(false);
   const [postToEdit, setPostToEdit] = useState(null);
   const [postContent, setPostContent] = useState("");
+  const [postMediaFiles, setPostMediaFiles] = useState([]);
   const [visibility, setVisibility] = useState("public");
+  const [composeOpen, setComposeOpen] = useState(false);
   const [commentDrafts, setCommentDrafts] = useState({});
   const [replyDrafts, setReplyDrafts] = useState({});
   const [trending, setTrending] = useState([]);
@@ -246,6 +278,8 @@ const HomePage = () => {
   const observerTarget = useRef(null);
   const targetPostId = searchParams.get("postId");
   const targetCommentId = searchParams.get("commentId");
+  const [commentModalPostId, setCommentModalPostId] = useState("");
+  const [hiddenPostIds, setHiddenPostIds] = useState([]);
 
   const isLoggedIn = Boolean(isAuthenticated);
   const displayName = user?.name || user?.email || "User";
@@ -325,6 +359,16 @@ const HomePage = () => {
     [posts],
   );
 
+  const activeCommentPost = useMemo(
+    () => posts.find((post) => post._id === commentModalPostId) || null,
+    [commentModalPostId, posts],
+  );
+
+  const visiblePosts = useMemo(
+    () => posts.filter((post) => !hiddenPostIds.includes(post._id)),
+    [hiddenPostIds, posts],
+  );
+
   const updatePost = (postId, updater) => {
     setPosts((prev) =>
       prev.map((post) => (post._id === postId ? updater(post) : post)),
@@ -362,17 +406,45 @@ const HomePage = () => {
 
     openTargetPost();
   }, [isLoggedIn, targetPostId, targetCommentId, posts]);
+  const removeCommentFromPost = (postId, commentId) => {
+    updatePost(postId, (post) => ({
+      ...post,
+      comments: (post.comments || [])
+        .filter((comment) => comment._id !== commentId)
+        .map((comment) => ({
+          ...comment,
+          replies: (comment.replies || []).filter((reply) => reply._id !== commentId),
+        })),
+    }));
+  };
 
   const handleCreatePost = async () => {
-    const res = await createPostApi({ content: postContent, visibility });
+    const formData = new FormData();
+    formData.append("content", postContent);
+    formData.append("visibility", visibility);
+    postMediaFiles.forEach((file) => {
+      formData.append("media", file.originFileObj || file);
+    });
+
+    const res = await createPostApi(formData);
     if (res?.EC === 0) {
       setPostContent("");
+      setPostMediaFiles([]);
+      setComposeOpen(false);
       message.success("Đã đăng bài");
       await loadFeed({ nextPage: 1 });
       await loadTrending();
     } else {
       message.error(res?.EM || "Không thể đăng bài");
     }
+  };
+
+  const handleMediaChange = ({ fileList }) => {
+    setPostMediaFiles(fileList.slice(0, 10));
+  };
+
+  const removeMediaFile = (uid) => {
+    setPostMediaFiles((prev) => prev.filter((file) => file.uid !== uid));
   };
 
   const handleReact = async (postId, type) => {
@@ -493,6 +565,29 @@ const HomePage = () => {
     await refreshNotifications();
     setNotificationOpen(false);
     navigate(getNotificationTargetUrl(item));
+    setHighlightedPostId(postId);
+    setHighlightedCommentId(commentId || "");
+    if (commentId) setCommentModalPostId(postId);
+
+    const hasPost = posts.some((post) => post._id === postId);
+    if (!hasPost) {
+      const res = await getPostByIdApi(postId);
+      if (res?.EC === 0) {
+        setPosts((prev) => [
+          res.data,
+          ...prev.filter((post) => post._id !== postId),
+        ]);
+      } else {
+        message.error(res?.EM || "Không thể mở bài viết từ thông báo");
+        return;
+      }
+    }
+
+    scrollToPostTarget(postId, commentId);
+    window.setTimeout(() => {
+      setHighlightedPostId("");
+      setHighlightedCommentId("");
+    }, 3500);
   };
 
   if (!isLoggedIn) {
@@ -632,11 +727,227 @@ const HomePage = () => {
       },
     };
   };
+  const handleEditPost = (post) => {
+    let content = post.content || "";
+    Modal.confirm({
+      title: "Chỉnh sửa bài viết",
+      content: (
+        <Input.TextArea
+          autoSize={{ minRows: 3, maxRows: 8 }}
+          defaultValue={content}
+          onChange={(event) => {
+            content = event.target.value;
+          }}
+        />
+      ),
+      okText: "Lưu",
+      cancelText: "Hủy",
+      onOk: async () => {
+        const res = await updatePostApi(post._id, { content });
+        if (res?.EC === 0) {
+          setPosts((prev) => prev.map((item) => (item._id === post._id ? res.data : item)));
+          message.success(res.EM || "Đã cập nhật bài viết");
+        } else {
+          message.error(res?.EM || "Không thể cập nhật bài viết");
+        }
+      },
+    });
+  };
+
+  const renderPostMenu = (post) => {
+    const isMine = post.author?._id === user?._id;
+    return {
+      items: isMine
+        ? [
+            { key: "edit", icon: <EditOutlined />, label: "Chỉnh sửa bài viết" },
+            { key: "delete", icon: <DeleteOutlined />, label: "Xóa bài viết", danger: true },
+          ]
+        : [
+            { key: "hide", icon: <EyeInvisibleOutlined />, label: "Ẩn bài viết" },
+            { key: "follow", icon: <UserAddOutlined />, label: "Theo dõi tác giả" },
+            { key: "friend", icon: <TeamOutlined />, label: "Gửi lời mời kết bạn" },
+            { key: "report", icon: <FlagOutlined />, label: "Báo cáo bài viết" },
+            { key: "block", icon: <StopOutlined />, label: "Chặn người dùng", danger: true },
+          ],
+    onClick: async ({ key }) => {
+      if (key === "edit") {
+        handleEditPost(post);
+      }
+      if (key === "delete") {
+        Modal.confirm({
+          title: "Xóa bài viết?",
+          okText: "Xóa",
+          okButtonProps: { danger: true },
+          cancelText: "Hủy",
+          onOk: async () => {
+            const res = await deletePostApi(post._id);
+            if (res?.EC === 0) {
+              setPosts((prev) => prev.filter((item) => item._id !== post._id));
+              message.success(res.EM || "Đã xóa bài viết");
+            } else {
+              message.error(res?.EM || "Không thể xóa bài viết");
+            }
+          },
+        });
+      }
+      if (key === "hide") {
+        const res = await hidePostApi(post._id);
+        if (res?.EC === 0) {
+          setHiddenPostIds((prev) => (prev.includes(post._id) ? prev : [...prev, post._id]));
+          message.success(res.EM || "Đã ẩn bài viết");
+        } else {
+          message.error(res?.EM || "Không thể ẩn bài viết");
+        }
+      }
+      if (key === "follow") {
+        await followUserApi(post.author._id);
+        message.success("Đã theo dõi");
+      }
+      if (key === "friend") {
+        const res = await friendRequestApi(post.author._id);
+        message.success(res?.EM || "Đã gửi lời mời");
+      }
+      if (key === "report") {
+        askReason("Báo cáo bài viết", async (reason) => {
+          const res = await reportPostApi(post._id, reason);
+          if (res?.EC === 0) {
+            message.success(res.EM || "Đã gửi báo cáo");
+          } else {
+            message.error(res?.EM || "Không thể gửi báo cáo");
+          }
+        });
+      }
+      if (key === "block") {
+        await blockUserApi(post.author._id);
+        message.success("Đã chặn người dùng");
+        await loadFeed({ nextPage: 1 });
+      }
+    },
+    };
+  };
+
+  const renderCommentList = (post, { preview = false } = {}) => {
+    const comments = post.comments || [];
+    const visibleComments = preview ? comments.slice(-1) : comments;
+
+    if (preview && !visibleComments.length) return null;
+
+    return (
+      <>
+        <List
+          className={preview ? "comment-list comment-list-preview" : "comment-list"}
+          dataSource={visibleComments}
+          locale={{ emptyText: "Chưa có bình luận" }}
+          renderItem={(comment) => (
+            <List.Item
+              id={`comment-${comment._id}`}
+              className={`comment-item ${
+                highlightedCommentId === comment._id ? "comment-item-highlight" : ""
+              }`}
+            >
+              <div className="comment-thread">
+                <Space
+                  align="start"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => navigate(`/profile/${comment.author?._id}`)}
+                >
+                  <Avatar
+                    size={32}
+                    src={comment.author?.avatar}
+                    icon={<UserOutlined />}
+                  >
+                    {comment.author?.name?.[0] || "U"}
+                  </Avatar>
+                  <div className="comment-bubble">
+                    <Typography.Text strong>{comment.author?.name}</Typography.Text>
+                    <Typography.Paragraph className="mb-0">
+                      {comment.content}
+                    </Typography.Paragraph>
+                  </div>
+                </Space>
+
+                {!preview ? (
+                  <div className="reply-area">
+                    {(comment.replies || []).map((reply) => (
+                      <Space
+                        key={reply._id}
+                        id={`comment-${reply._id}`}
+                        align="start"
+                        className={`reply-row ${
+                          highlightedCommentId === reply._id
+                            ? "comment-item-highlight"
+                            : ""
+                        }`}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => navigate(`/profile/${reply.author?._id}`)}
+                      >
+                        <Avatar
+                          size={26}
+                          src={reply.author?.avatar}
+                          icon={<UserOutlined />}
+                        >
+                          {reply.author?.name?.[0] || "U"}
+                        </Avatar>
+                        <div className="reply-bubble">
+                          <Typography.Text strong>{reply.author?.name}</Typography.Text>
+                          <Typography.Paragraph className="mb-0">
+                            {reply.content}
+                          </Typography.Paragraph>
+                        </div>
+                      </Space>
+                    ))}
+                    <Space.Compact className="reply-input">
+                      <Input
+                        value={replyDrafts[comment._id] || ""}
+                        onChange={(event) =>
+                          setReplyDrafts((prev) => ({
+                            ...prev,
+                            [comment._id]: event.target.value,
+                          }))
+                        }
+                        onPressEnter={() => handleReply(post._id, comment._id)}
+                        placeholder="Trả lời bình luận..."
+                      />
+                      <Button onClick={() => handleReply(post._id, comment._id)}>
+                        Trả lời
+                      </Button>
+                    </Space.Compact>
+                  </div>
+                ) : null}
+              </div>
+            </List.Item>
+          )}
+        />
+      </>
+    );
+  };
 
   return (
     <div className="home-page-layout">
       <main className="social-feed">
         <Card className="composer-card" onClick={() => setCreatePostVisible(true)} style={{ cursor: "pointer" }}>
+        <CreatePostComposer
+          avatar={userProfile?.avatar || user?.avatar}
+          content={postContent}
+          files={postMediaFiles}
+          modalPlaceholder="Tạo bài viết công khai..."
+          name={displayName}
+          onContentChange={setPostContent}
+          onFilesChange={(fileList) => setPostMediaFiles(fileList)}
+          onOpenChange={setComposeOpen}
+          onRemoveFile={removeMediaFile}
+          onSubmit={handleCreatePost}
+          open={composeOpen}
+          triggerPlaceholder="Bạn viết gì đi..."
+          visibilityOptions={[
+            { value: "public", label: "Công khai" },
+            { value: "friends", label: "Bạn bè" },
+          ]}
+          visibilityValue={visibility}
+          onVisibilityChange={setVisibility}
+        />
+
+        <Card className="composer-card composer-card-collapsed legacy-composer-hidden">
           <div className="composer-head">
             <Avatar
               size={44}
@@ -649,6 +960,11 @@ const HomePage = () => {
             <Input
               className="composer-pill"
               value=""
+              readOnly
+              onClick={() => setComposeOpen(true)}
+              onFocus={() => setComposeOpen(true)}
+              value=""
+              onChange={(event) => setPostContent(event.target.value)}
               placeholder={`${displayName}, bạn đang nghĩ gì?`}
               readOnly
             />
@@ -660,6 +976,35 @@ const HomePage = () => {
             placeholder="Viết bài đăng... dùng @email để mention và #topic để tạo trending"
             readOnly
           />
+          <div className="composer-media">
+            <Upload
+              accept="image/*,video/*"
+              beforeUpload={() => false}
+              fileList={postMediaFiles}
+              multiple
+              onChange={handleMediaChange}
+              showUploadList={false}
+            >
+              <Button icon={<PictureOutlined />}>Them anh/video</Button>
+            </Upload>
+            {postMediaFiles.length ? (
+              <div className="composer-media-list">
+                {postMediaFiles.map((file) => (
+                  <Tag
+                    key={file.uid}
+                    closable
+                    closeIcon={<DeleteOutlined />}
+                    onClose={(event) => {
+                      event.preventDefault();
+                      removeMediaFile(file.uid);
+                    }}
+                  >
+                    {file.name}
+                  </Tag>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <Divider className="compact-divider" />
           <div className="composer-actions">
             <Select
@@ -674,11 +1019,94 @@ const HomePage = () => {
             />
             <Button
               type="primary"
+              onClick={handleCreatePost}
+              disabled={!postContent.trim() && postMediaFiles.length === 0}
             >
               Đăng bài
             </Button>
           </div>
         </Card>
+
+        <Modal
+          className="create-post-modal"
+          title={<div className="create-post-title">Tạo bài viết</div>}
+          open={false}
+          onCancel={() => setComposeOpen(false)}
+          footer={null}
+          width={620}
+          centered
+        >
+          <div className="create-post-author">
+            <Avatar
+              size={48}
+              src={getMediaUrl(userProfile?.avatar)}
+              icon={<UserOutlined />}
+            >
+              {displayName[0]}
+            </Avatar>
+            <div>
+              <strong>{displayName}</strong>
+              <Select
+                value={visibility}
+                onChange={setVisibility}
+                suffixIcon={<GlobalOutlined />}
+                options={[
+                  { value: "public", label: "Công khai" },
+                  { value: "friends", label: "Bạn bè" },
+                ]}
+                size="small"
+                style={{ minWidth: 132 }}
+              />
+            </div>
+          </div>
+          <Input.TextArea
+            className="create-post-textarea"
+            autoFocus
+            autoSize={{ minRows: 7, maxRows: 12 }}
+            value={postContent}
+            onChange={(event) => setPostContent(event.target.value)}
+            placeholder="Tạo bài viết công khai..."
+          />
+          <div className="create-post-addons">
+            <strong>Thêm vào bài viết của bạn</strong>
+            <Upload
+              accept="image/*,video/*"
+              beforeUpload={() => false}
+              fileList={postMediaFiles}
+              multiple
+              onChange={handleMediaChange}
+              showUploadList={false}
+            >
+              <Button icon={<PictureOutlined />} shape="circle" type="text" />
+            </Upload>
+          </div>
+          {postMediaFiles.length ? (
+            <div className="composer-media-list create-post-file-list">
+              {postMediaFiles.map((file) => (
+                <Tag
+                  key={file.uid}
+                  closable
+                  closeIcon={<DeleteOutlined />}
+                  onClose={(event) => {
+                    event.preventDefault();
+                    removeMediaFile(file.uid);
+                  }}
+                >
+                  {file.name}
+                </Tag>
+              ))}
+            </div>
+          ) : null}
+          <Button
+            block
+            className="create-post-submit"
+            type="primary"
+            onClick={handleCreatePost}
+            disabled={!postContent.trim() && postMediaFiles.length === 0}
+          >
+            Đăng
+          </Button>
+        </Modal>
 
         <div className="feed-toolbar">
           <Radio.Group
@@ -700,8 +1128,8 @@ const HomePage = () => {
         </div>
 
         <Space direction="vertical" style={{ width: "100%" }} size={16}>
-          {posts.length ? (
-            posts.map((post) => (
+          {visiblePosts.length ? (
+            visiblePosts.map((post) => (
               <Card
                 key={post._id}
                 id={`post-${post._id}`}
@@ -770,6 +1198,29 @@ const HomePage = () => {
                       </Tag>
                     ))}
                   </Space>
+                ) : null}
+
+                {normalizePostMedia(post.media).length ? (
+                  <div className="post-media-grid">
+                    {normalizePostMedia(post.media).map((item, idx) => {
+                      const src = getMediaUrl(item.url);
+                      return item.type === "video" ? (
+                        <video
+                          key={`${src}-${idx}`}
+                          className="post-media-item"
+                          controls
+                          src={src}
+                        />
+                      ) : (
+                        <Image
+                          key={`${src}-${idx}`}
+                          className="post-media-item"
+                          src={src}
+                          alt={item.originalName || "post media"}
+                        />
+                      );
+                    })}
+                  </div>
                 ) : null}
 
                 {post.sharedPost ? (
@@ -850,6 +1301,13 @@ const HomePage = () => {
                         }
                       }, 80);
                     }}
+                  >
+                    Like
+                  </Button>
+                  <Button
+                    type="text"
+                    icon={<CommentOutlined />}
+                    onClick={() => setCommentModalPostId(post._id)}
                   >
                     Bình luận
                   </Button>
@@ -990,6 +1448,7 @@ const HomePage = () => {
                     </List.Item>
                   )}
                 />
+                {renderCommentList(post, { preview: true })}
               </Card>
             ))
           ) : (
@@ -1046,6 +1505,50 @@ const HomePage = () => {
           </Space>
         </Card>
       </aside>
+
+      <PostCommentsModal
+        open={Boolean(activeCommentPost)}
+        post={activeCommentPost}
+        onClose={() => setCommentModalPostId("")}
+        currentUser={{ ...user, name: displayName, avatar: userProfile?.avatar || user?.avatar }}
+        commentValue={activeCommentPost ? commentDrafts[activeCommentPost._id] || "" : ""}
+        onCommentChange={(value) =>
+          activeCommentPost &&
+          setCommentDrafts((prev) => ({
+            ...prev,
+            [activeCommentPost._id]: value,
+          }))
+        }
+        onSubmitComment={handleComment}
+        replyDrafts={replyDrafts}
+        onReplyChange={(commentId, value) =>
+          setReplyDrafts((prev) => ({ ...prev, [commentId]: value }))
+        }
+        onSubmitReply={handleReply}
+        onAuthorClick={(authorId) => authorId && navigate(`/profile/${authorId}`)}
+        onReact={(post) => handleReact(post._id, "like")}
+        onShare={(post) => handleShare(post._id)}
+        onHideComment={async (post, commentId) => {
+          const res = await hideCommentApi(commentId);
+          if (res?.EC === 0) {
+            removeCommentFromPost(post._id, commentId);
+            message.success(res.EM || "Đã ẩn bình luận");
+          } else {
+            message.error(res?.EM || "Không thể ẩn bình luận");
+          }
+        }}
+        onReportComment={(post, comment) =>
+          askReason("Báo cáo bình luận", async (reason) => {
+            const res = await reportCommentApi(comment._id, reason);
+            if (res?.EC === 0) {
+              message.success(res.EM || "Đã gửi báo cáo");
+            } else {
+              message.error(res?.EM || "Không thể gửi báo cáo");
+            }
+          })
+        }
+        highlightedCommentId={highlightedCommentId}
+      />
 
       <Drawer
         title="Thông báo"

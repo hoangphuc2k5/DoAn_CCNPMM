@@ -26,6 +26,12 @@ const getFeedApi = ({ mode = "latest", page = 1, limit = 10 }) =>
 
 const getPostByIdApi = (postId) => axios.get(`/v1/api/posts/${postId}`);
 
+const updatePostApi = (postId, payload) => axios.patch(`/v1/api/posts/${postId}`, payload);
+
+const deletePostApi = (postId) => axios.delete(`/v1/api/posts/${postId}`);
+
+const hidePostApi = (postId) => axios.post(`/v1/api/posts/${postId}/hide`);
+
 const reactPostApi = (postId, type) => axios.post(`/v1/api/posts/${postId}/react`, { type });
 
 const commentPostApi = (postId, content) =>
@@ -34,9 +40,16 @@ const commentPostApi = (postId, content) =>
 const replyCommentApi = (commentId, postId, content) =>
   axios.post(`/v1/api/comments/${commentId}/replies`, { postId, content });
 
+const deleteCommentApi = (commentId) => axios.delete(`/v1/api/comments/${commentId}`);
+
+const hideCommentApi = (commentId) => axios.post(`/v1/api/comments/${commentId}/hide`);
+
 const sharePostApi = (postId, content) => axios.post(`/v1/api/posts/${postId}/share`, { content });
 
 const reportPostApi = (postId, reason) => axios.post(`/v1/api/posts/${postId}/report`, { reason });
+
+const reportCommentApi = (commentId, reason) =>
+  axios.post(`/v1/api/comments/${commentId}/report`, { reason });
 
 const followUserApi = (userId) => axios.post(`/v1/api/users/${userId}/follow`);
 
@@ -86,6 +99,67 @@ const recallMessageApi = (messageId) => axios.delete(`/v1/api/messages/${message
 
 const markSeenApi = (conversationId) => axios.post(`/v1/api/conversations/${conversationId}/seen`);
 
+const getGroupsApi = (params) => axios.get("/v1/api/groups", { params });
+
+const createGroupApi = (payload) => axios.post("/v1/api/groups", payload);
+
+const getGroupApi = (groupId) => axios.get(`/v1/api/groups/${groupId}`);
+
+const updateGroupApi = (groupId, payload) => axios.patch(`/v1/api/groups/${groupId}`, payload);
+
+const uploadGroupAvatarApi = (groupId, payload) =>
+  axios.put(`/v1/api/groups/${groupId}/avatar`, payload);
+
+const uploadGroupCoverApi = (groupId, payload) =>
+  axios.put(`/v1/api/groups/${groupId}/cover`, payload);
+
+const joinGroupApi = (groupId) => axios.post(`/v1/api/groups/${groupId}/join`);
+
+const leaveGroupApi = (groupId) => axios.delete(`/v1/api/groups/${groupId}/leave`);
+
+const getGroupJoinRequestsApi = (groupId) =>
+  axios.get(`/v1/api/groups/${groupId}/join-requests`);
+
+const respondGroupJoinRequestApi = (groupId, requestId, action) =>
+  axios.patch(`/v1/api/groups/${groupId}/join-requests/${requestId}`, { action });
+
+const removeGroupMemberApi = (groupId, memberId) =>
+  axios.delete(`/v1/api/groups/${groupId}/members/${memberId}`);
+
+const updateGroupMemberRoleApi = (groupId, memberId, role) =>
+  axios.patch(`/v1/api/groups/${groupId}/members/${memberId}/role`, { role });
+
+const getGroupPostsApi = (groupId, params) =>
+  axios.get(`/v1/api/groups/${groupId}/posts`, { params });
+
+const getGroupMediaApi = (groupId, params) =>
+  axios.get(`/v1/api/groups/${groupId}/media`, { params });
+
+const getGroupPendingPostsApi = (groupId) =>
+  axios.get(`/v1/api/groups/${groupId}/posts/pending`);
+
+const reviewGroupPostApi = (groupId, postId, action) =>
+  axios.patch(`/v1/api/groups/${groupId}/posts/${postId}/review`, { action });
+
+const createGroupPostApi = (groupId, payload) =>
+  axios.post(`/v1/api/groups/${groupId}/posts`, payload);
+
+const getGroupReportsApi = (groupId) => axios.get(`/v1/api/groups/${groupId}/reports`);
+
+const resolveGroupReportApi = (groupId, reportId, action) =>
+  axios.patch(`/v1/api/groups/${groupId}/reports/${reportId}`, { action });
+
+const getGroupEventsApi = (groupId) => axios.get(`/v1/api/groups/${groupId}/events`);
+
+const createGroupEventApi = (groupId, payload) =>
+  axios.post(`/v1/api/groups/${groupId}/events`, payload);
+
+const attendGroupEventApi = (groupId, eventId) =>
+  axios.post(`/v1/api/groups/${groupId}/events/${eventId}/attend`);
+
+const leaveGroupEventApi = (groupId, eventId) =>
+  axios.delete(`/v1/api/groups/${groupId}/events/${eventId}/attend`);
+
 export {
   blockUserApi,
   commentPostApi,
@@ -94,29 +168,58 @@ export {
   deletePostApi,
   pinPostApi,
   createUserApi,
+  deleteCommentApi,
+  deletePostApi,
   followUserApi,
   forgotPasswordApi,
   friendRequestApi,
   getAccountApi,
   getFeedApi,
+  getGroupApi,
+  getGroupEventsApi,
+  getGroupMediaApi,
+  getGroupPendingPostsApi,
+  getGroupPostsApi,
+  getGroupReportsApi,
+  getGroupsApi,
   getNotificationsApi,
   getPushPublicKeyApi,
   getPostByIdApi,
   getRelationshipsApi,
   getTrendingApi,
   getUserApi,
+  hideCommentApi,
+  hidePostApi,
   loginApi,
+  attendGroupEventApi,
+  createGroupApi,
+  createGroupEventApi,
+  createGroupPostApi,
+  getGroupJoinRequestsApi,
+  joinGroupApi,
+  leaveGroupEventApi,
+  leaveGroupApi,
   markAllNotificationsReadApi,
   markNotificationReadApi,
   subscribePushApi,
   unsubscribePushApi,
   reactPostApi,
   replyCommentApi,
+  reportCommentApi,
   reportPostApi,
   reportUserApi,
+  removeGroupMemberApi,
+  resolveGroupReportApi,
+  reviewGroupPostApi,
+  respondGroupJoinRequestApi,
   respondFriendRequestApi,
   searchApi,
   sharePostApi,
+  updateGroupApi,
+  updateGroupMemberRoleApi,
+  updatePostApi,
+  uploadGroupAvatarApi,
+  uploadGroupCoverApi,
   unblockUserApi,
   unfollowUserApi,
   getConversationsApi,

@@ -355,6 +355,19 @@ const SearchPage = () => {
             actions={[
               <Button key="join" type="primary" size="small" className="btn-search-purple-solid">
                 Tham gia
+            style={{ cursor: "pointer" }}
+            onClick={() => navigate(`/groups/${item._id}`)}
+            actions={[
+              <Button
+                key="join"
+                type="primary"
+                size="small"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  navigate(`/groups/${item._id}`);
+                }}
+              >
+                Vào nhóm
               </Button>,
             ]}
           >

@@ -14,6 +14,23 @@ import {
 } from "@ant-design/icons";
 import { getMediaUrl } from "../../util/media";
 import "../../styles/user-profile.css";
+import { Card, Empty, Button, Spin, Image } from "antd";
+import { LoadingOutlined } from "@ant-design/icons";
+import { getMediaUrl } from "../../util/media";
+
+const normalizeMedia = (media = []) =>
+  media
+    .map((item) => {
+      if (!item) return null;
+      if (typeof item === "string") {
+        return {
+          url: item,
+          type: /\.(mp4|mov|avi|mkv|webm)$/i.test(item) ? "video" : "image",
+        };
+      }
+      return item;
+    })
+    .filter(Boolean);
 
 const renderPostContent = (text = "") => {
   if (!text) return "";
@@ -127,6 +144,8 @@ const PostsList = ({
         {posts.map((post) => {
           const mediaUrl = getPostMedia(post);
           return (
+          <p>{post.content}</p>
+          {normalizeMedia(post.media).length > 0 && (
             <div
               key={post._id}
               className="post-item-card"
@@ -173,6 +192,24 @@ const PostsList = ({
                   </button>
                 </div>
               </div>
+              {normalizeMedia(post.media).map((item, idx) => {
+                const src = getMediaUrl(item.url);
+                return item.type === "video" ? (
+                  <video
+                    key={`${src}-${idx}`}
+                    src={src}
+                    controls
+                    style={{ maxWidth: "240px", height: "auto", borderRadius: "8px" }}
+                  />
+                ) : (
+                  <Image
+                    key={`${src}-${idx}`}
+                    src={src}
+                    alt={item.originalName || "media"}
+                    style={{ maxWidth: "200px", height: "auto", borderRadius: "8px" }}
+                  />
+                );
+              })}
             </div>
           );
         })}

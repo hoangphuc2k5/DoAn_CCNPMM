@@ -59,7 +59,14 @@ const users = [
   },
 ];
 
-const createNotification = (recipient, actor, type, post = null, comment = null, metadata = {}) => ({
+const createNotification = (
+  recipient,
+  actor,
+  type,
+  post = null,
+  comment = null,
+  metadata = {},
+) => ({
   recipient,
   actor,
   type,
@@ -96,16 +103,15 @@ const run = async () => {
         { comment: { $in: oldCommentIds } },
       ],
     }),
-    Follow.deleteMany({ $or: [{ follower: { $in: oldUserIds } }, { following: { $in: oldUserIds } }] }),
+    Follow.deleteMany({
+      $or: [{ follower: { $in: oldUserIds } }, { following: { $in: oldUserIds } }],
+    }),
     Friendship.deleteMany({
       $or: [{ requester: { $in: oldUserIds } }, { recipient: { $in: oldUserIds } }],
     }),
     Block.deleteMany({ $or: [{ blocker: { $in: oldUserIds } }, { blocked: { $in: oldUserIds } }] }),
     Report.deleteMany({
-      $or: [
-        { reporter: { $in: oldUserIds } },
-        { targetId: { $in: [...oldUserIds, ...oldPostIds] } },
-      ],
+      $or: [{ reporter: { $in: oldUserIds } }, { targetId: { $in: [...oldUserIds, ...oldPostIds] } }],
     }),
     Post.deleteMany({ author: { $in: oldUserIds } }),
     Group.deleteMany({}),
@@ -139,22 +145,28 @@ const run = async () => {
       description: "Nơi chia sẻ kiến thức về Node.js, ReactJS và JavaScript toàn tập. Hãy thảo luận tích cực!",
       createdBy: userMap.castrol._id,
       members: [userMap.castrol._id, userMap.mai._id, userMap.nam._id],
-      avatar: "https://images.unsplash.com/photo-1579468118864-1b9ea3c0db4a?w=150"
+      admins: [userMap.castrol._id],
+      moderators: [],
+      avatar: "https://images.unsplash.com/photo-1579468118864-1b9ea3c0db4a?w=150",
     },
     {
       name: "Học tập & Chia sẻ tài liệu CNPM",
       description: "Nhóm trao đổi bài tập lớn, tài liệu môn học Công nghệ phần mềm mới nhất.",
       createdBy: userMap.mai._id,
       members: [userMap.mai._id, userMap.nam._id, userMap.linh._id],
-      avatar: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=150"
+      admins: [userMap.mai._id],
+      moderators: [],
+      avatar: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=150",
     },
     {
       name: "Hội UI/UX Designer Việt Nam",
       description: "Thảo luận về thiết kế giao diện, trải nghiệm người dùng, Figma và thiết kế CSS/Antd.",
       createdBy: userMap.nam._id,
       members: [userMap.nam._id, userMap.castrol._id],
-      avatar: "https://images.unsplash.com/photo-1581291518633-83b4ebd1d83e?w=150"
-    }
+      admins: [userMap.nam._id],
+      moderators: [],
+      avatar: "https://images.unsplash.com/photo-1581291518633-83b4ebd1d83e?w=150",
+    },
   ]);
 
   const postCastrol = await Post.create({
