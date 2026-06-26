@@ -24,6 +24,7 @@ import {
   BarChartOutlined,
   CloseOutlined,
 } from "@ant-design/icons";
+import { getMediaUrl } from "../util/media";
 import {
   banAdminUserApi,
   getAdminDashboardApi,
@@ -455,82 +456,103 @@ const AdminPage = () => {
 
   return (
     <>
-      <div className="flex min-h-screen bg-gray-50">
-        {/* Main Content Area */}
-        <div className="flex-1 ml-0">
-          <div className="p-6 max-w-6xl mx-auto">
-            {/* Header */}
-            <div className="mb-8">
-              <h1 className="text-2xl font-bold text-gray-800">Tổng quan hệ thống</h1>
-            </div>
+      <div style={{ display: 'flex', minHeight: '100vh', background: '#ffffff' }}>
+        {/* Main Content Area (matches Figma's AppShell) */}
+        <div style={{ flex: 1, display: 'flex' }}>
+          {/* Main Content Container (matches Figma's Main Content) */}
+          <div style={{ flex: 1, display: 'flex', maxWidth: 1180 }}>
+            {/* Admin Panel (matches Figma's AdminPanel) */}
+            <div style={{ display: 'flex', width: '100%' }}>
+              {/* Admin Sidebar (matches Figma's Sidebar instance) */}
+              <AdminSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+              
+              {/* Main Content (matches Figma's Container) */}
+              <div style={{ flex: 1, padding: 24 }}>
+                {/* Header (matches Figma's Heading 2) */}
+                <div style={{ marginBottom: 28 }}>
+                  <h1 style={{
+                    fontSize: 24,
+                    fontWeight: 800,
+                    color: '#111827',
+                    margin: 0
+                  }}>Tổng quan hệ thống</h1>
+                </div>
 
-            {/* Stat Cards */}
-            <Row gutter={[16, 16]} className="mb-8">
-              <Col xs={24} sm={12} lg={6}>
-                <StatCard 
-                  icon={UserOutlined} 
-                  title="Người dùng" 
-                  value={metrics.totalUsers || 0} 
-                  change="+12% tuần"
-                  color="#7F00FD"
-                />
-              </Col>
-              <Col xs={24} sm={12} lg={6}>
-                <StatCard 
-                  icon={FileTextOutlined} 
-                  title="Bài viết" 
-                  value={metrics.totalPosts || 0} 
-                  change="+8% tuần"
-                  color="#1890FF"
-                />
-              </Col>
-              <Col xs={24} sm={12} lg={6}>
-                <StatCard 
-                  icon={WarningOutlined} 
-                  title="Báo cáo" 
-                  value={metrics.openReports || 0} 
-                  change="-3 hôm nay"
-                  color="#FAAD14"
-                />
-              </Col>
-              <Col xs={24} sm={12} lg={6}>
-                <StatCard 
-                  icon={BarChartOutlined} 
-                  title="Hoạt động/ngày" 
-                  value={metrics.activeUsers || 0} 
-                  change="+5% tuần"
-                  color="#52C41A"
-                />
-              </Col>
-            </Row>
+                {/* Stat Cards Container (matches Figma's Container:margin) */}
+                <div style={{ marginBottom: 28 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                    <StatCard 
+                      icon={UserOutlined} 
+                      title="Người dùng" 
+                      value={metrics.totalUsers || 0} 
+                      change="+12% tuần"
+                      color="#7F00FD"
+                    />
+                    <StatCard 
+                      icon={FileTextOutlined} 
+                      title="Bài viết" 
+                      value={metrics.totalPosts || 0} 
+                      change="+8% tuần"
+                      color="#1890FF"
+                    />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                    <StatCard 
+                      icon={WarningOutlined} 
+                      title="Báo cáo" 
+                      value={metrics.openReports || 0} 
+                      change="-3 hôm nay"
+                      color="#FAAD14"
+                    />
+                    <StatCard 
+                      icon={BarChartOutlined} 
+                      title="Hoạt động/ngày" 
+                      value={metrics.activeUsers || 0} 
+                      change="+5% tuần"
+                      color="#52C41A"
+                    />
+                  </div>
+                </div>
 
-            {/* Chart Placeholder */}
-            <Card className="mb-8 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <BarChartOutlined className="text-gray-600" />
-                <span className="font-medium text-gray-800">Bài viết theo tháng</span>
-              </div>
-              <div className="h-32 bg-gray-50 rounded-lg flex items-center justify-center text-gray-400">
-                Biểu đồ sẽ hiển thị ở đây
-              </div>
-            </Card>
+                {/* Chart Placeholder (matches Figma's MiniBarChart) */}
+                <div style={{
+                  background: '#ffffff',
+                  borderRadius: 16,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                  padding: 20.8,
+                  marginBottom: 24
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+                    <BarChartOutlined style={{ color: '#4b5563', fontSize: 16 }} />
+                    <span style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}>Bài viết theo tháng</span>
+                  </div>
+                  <div style={{
+                    height: 128,
+                    background: '#f9fafb',
+                    borderRadius: 12,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#9ca3af',
+                    fontSize: 14
+                  }}>
+                    Biểu đồ sẽ hiển thị ở đây
+                  </div>
+                </div>
 
-            {/* Content Area with Sidebar and Table */}
-            <Card className="shadow-sm p-0 overflow-hidden">
-              <div className="flex">
-                <AdminSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
-                <div className="flex-1 p-6">
+                {/* Search Bar and Table */}
+                <div>
                   {/* Search Bar */}
-                  <div className="flex justify-between items-center mb-6">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                     <Input.Search
                       allowClear
                       placeholder="Tìm theo tên, email hoặc nội dung"
                       value={keyword}
                       onChange={(event) => setKeyword(event.target.value)}
                       onSearch={handleSearch}
-                      className="w-80"
+                      style={{ width: 320 }}
                     />
-                    <Typography.Text type="secondary">
+                    <Typography.Text type="secondary" style={{ fontSize: 14 }}>
                       Cập nhật gần nhất: {formatDate(new Date().toISOString())}
                     </Typography.Text>
                   </div>
@@ -538,7 +560,7 @@ const AdminPage = () => {
                   {tabContent[activeTab]}
                 </div>
               </div>
-            </Card>
+            </div>
           </div>
         </div>
       </div>
@@ -558,7 +580,7 @@ const AdminPage = () => {
         {selectedUser && (
           <div className="py-4">
             <div className="flex items-center gap-4 mb-6">
-              <Avatar size={80} icon={<UserOutlined />} src={selectedUser.avatar} />
+              <Avatar size={80} icon={<UserOutlined />} src={getMediaUrl(selectedUser.avatar)} />
               <div>
                 <Typography.Title level={4} style={{ margin: 0 }}>
                   {selectedUser.name || "Chưa đặt tên"}
@@ -596,7 +618,7 @@ const AdminPage = () => {
         {selectedPost && (
           <div className="py-4">
             <div className="flex items-center gap-3 mb-4">
-              <Avatar size={48} icon={<UserOutlined />} src={selectedPost.author?.avatar} />
+              <Avatar size={48} icon={<UserOutlined />} src={getMediaUrl(selectedPost.author?.avatar)} />
               <div>
                 <Typography.Text strong>{selectedPost.author?.name || selectedPost.author?.email || "Không rõ"}</Typography.Text>
                 <div className="text-gray-400 text-sm">{formatDate(selectedPost.createdAt)}</div>
@@ -608,7 +630,7 @@ const AdminPage = () => {
             {selectedPost.media && selectedPost.media.length > 0 && (
               <div className="grid grid-cols-2 gap-2 mb-4">
                 {selectedPost.media.map((url, idx) => (
-                  <img key={idx} src={url} alt={`Media ${idx + 1}`} className="rounded-lg w-full h-40 object-cover" />
+                  <img key={idx} src={getMediaUrl(url)} alt={`Media ${idx + 1}`} className="rounded-lg w-full h-40 object-cover" />
                 ))}
               </div>
             )}
