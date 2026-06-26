@@ -2,6 +2,7 @@ const Group = require("../models/group");
 const GroupEvent = require("../models/groupEvent");
 const Post = require("../models/post");
 const { processPostMediaFiles } = require("./mediaService");
+const { decoratePosts } = require("./socialService");
 
 const idOf = (value) => String(value?._id || value);
 
@@ -114,6 +115,20 @@ const updateGroup = async (userId, groupId, payload) => {
 
   await group.save();
   return { EC: 0, EM: "Da cap nhat nhom", data: await decorateGroup(group, userId) };
+};
+
+const updateGroupImage = async (userId, groupId, field, filePath) => {
+  const group = await Group.findById(groupId);
+  if (!group) return { EC: 1, EM: "Khong tim thay nhom" };
+  if (!isGroupAdmin(group, userId)) return { EC: 2, EM: "Chi admin moi duoc cap nhat anh nhom" };
+  if (!["avatar", "coverPhoto"].includes(field)) {
+    return { EC: 3, EM: "Loai anh nhom khong hop le" };
+  }
+  if (!filePath) return { EC: 4, EM: "Vui long chon file anh" };
+
+  group[field] = filePath;
+  await group.save();
+  return { EC: 0, EM: "Da cap nhat anh nhom", data: await decorateGroup(group, userId) };
 };
 
 const getGroupById = async (userId, groupId) => {
@@ -268,9 +283,11 @@ const getGroupPosts = async (userId, groupId, query = {}) => {
     .limit(limit)
     .populate("author", "name avatar email");
 
+  const data = await decoratePosts(posts, userId);
+
   return {
     EC: 0,
-    data: posts,
+    data,
     pagination: { page, limit, hasMore: posts.length === limit },
   };
 };
@@ -395,5 +412,6 @@ module.exports = {
   removeMember,
   respondJoinRequest,
   updateGroup,
+  updateGroupImage,
   updateMemberRole,
 };

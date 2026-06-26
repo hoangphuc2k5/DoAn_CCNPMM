@@ -58,12 +58,14 @@ routerAPI.get("/profile/:userId/media", profileController.getUserMedia);
 routerAPI.post("/posts", postMediaUpload.array("media", 10), socialController.createPost);
 routerAPI.get("/feed", socialController.getFeed);
 routerAPI.get("/posts/:postId", socialController.getPostById);
+routerAPI.delete("/posts/:postId", socialController.deletePost);
 routerAPI.get("/trending", socialController.getTrendingTopics);
 routerAPI.use("/search", searchRouter);
 routerAPI.get("/relationships", socialController.getRelationships);
 routerAPI.post("/posts/:postId/react", socialController.reactPost);
 routerAPI.post("/posts/:postId/comments", socialController.commentPost);
 routerAPI.post("/comments/:commentId/replies", socialController.replyComment);
+routerAPI.delete("/comments/:commentId", socialController.deleteComment);
 routerAPI.post("/posts/:postId/share", socialController.sharePost);
 routerAPI.post("/posts/:postId/report", socialController.reportPost);
 
@@ -96,6 +98,16 @@ routerAPI.get("/groups", groupController.listGroups);
 routerAPI.post("/groups", groupController.createGroup);
 routerAPI.get("/groups/:groupId", groupController.getGroupById);
 routerAPI.patch("/groups/:groupId", groupController.updateGroup);
+routerAPI.put(
+  "/groups/:groupId/avatar",
+  upload.single("avatar"),
+  groupController.uploadAvatar,
+);
+routerAPI.put(
+  "/groups/:groupId/cover",
+  upload.single("cover"),
+  groupController.uploadCover,
+);
 routerAPI.post("/groups/:groupId/join", groupController.joinGroup);
 routerAPI.delete("/groups/:groupId/leave", groupController.leaveGroup);
 routerAPI.get("/groups/:groupId/join-requests", groupController.listJoinRequests);

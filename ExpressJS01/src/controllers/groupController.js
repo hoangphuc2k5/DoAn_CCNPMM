@@ -21,6 +21,36 @@ const updateGroup = async (req, res) => {
   return res.status(data.EC === 0 ? 200 : 400).json(data);
 };
 
+const uploadAvatar = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ EC: 1, EM: "Vui long chon file anh" });
+  }
+
+  const filePath = `/uploads/avatars/${req.file.filename}`;
+  const data = await groupService.updateGroupImage(
+    currentUserId(req),
+    req.params.groupId,
+    "avatar",
+    filePath,
+  );
+  return res.status(data.EC === 0 ? 200 : 400).json(data);
+};
+
+const uploadCover = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ EC: 1, EM: "Vui long chon file anh" });
+  }
+
+  const filePath = `/uploads/covers/${req.file.filename}`;
+  const data = await groupService.updateGroupImage(
+    currentUserId(req),
+    req.params.groupId,
+    "coverPhoto",
+    filePath,
+  );
+  return res.status(data.EC === 0 ? 200 : 400).json(data);
+};
+
 const getGroupById = async (req, res) => {
   const data = await groupService.getGroupById(currentUserId(req), req.params.groupId);
   return res.status(data.EC === 0 ? 200 : 400).json(data);
@@ -137,5 +167,7 @@ module.exports = {
   removeMember,
   respondJoinRequest,
   updateGroup,
+  uploadAvatar,
+  uploadCover,
   updateMemberRole,
 };

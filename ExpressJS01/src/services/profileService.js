@@ -68,7 +68,7 @@ const getFullProfileService = async (userId, currentUserId) => {
         { recipient: userId, status: "accepted" },
       ],
     });
-    const postsCount = await Post.countDocuments({ author: userId });
+    const postsCount = await Post.countDocuments({ author: userId, group: null });
 
     // Check current user relationship
     let isFollowing = false;
@@ -209,7 +209,7 @@ const getUserPostsService = async (
       }
     }
 
-    let query = { author: userId };
+    let query = { author: userId, group: null };
 
     // If viewing someone else's profile, filter by privacy
     if (!currentUserId || String(userId) !== String(currentUserId)) {
@@ -331,7 +331,7 @@ const getUserMediaService = async (
       }
     }
 
-    let query = { author: userId, media: { $exists: true, $ne: [] } };
+    let query = { author: userId, group: null, media: { $exists: true, $ne: [] } };
 
     if (!currentUserId || String(userId) !== String(currentUserId)) {
       const isFriend = await Friendship.findOne({
@@ -393,7 +393,7 @@ const getUserMediaAlbumsService = async (userId, currentUserId) => {
       }
     }
 
-    let query = { author: userId, media: { $exists: true, $ne: [] } };
+    let query = { author: userId, group: null, media: { $exists: true, $ne: [] } };
 
     if (!currentUserId || String(userId) !== String(currentUserId)) {
       const isFriend = await Friendship.findOne({

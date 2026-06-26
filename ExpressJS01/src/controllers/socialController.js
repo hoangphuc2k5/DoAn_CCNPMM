@@ -49,6 +49,22 @@ const replyComment = async (req, res) => {
   return res.status(200).json(data);
 };
 
+const deleteComment = async (req, res) => {
+  const data = await socialService.deleteComment(
+    currentUserId(req),
+    req.params.commentId,
+  );
+  return res.status(200).json(data);
+};
+
+const deletePost = async (req, res) => {
+  const data = await socialService.deletePost(
+    currentUserId(req),
+    req.params.postId,
+  );
+  return res.status(200).json(data);
+};
+
 const sharePost = async (req, res) => {
   const data = await socialService.sharePost(
     currentUserId(req),
@@ -151,6 +167,8 @@ module.exports = {
   blockUser,
   commentPost,
   createPost,
+  deleteComment,
+  deletePost,
   followUser,
   getFeed,
   getNotifications,

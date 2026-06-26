@@ -18,6 +18,8 @@ const getFeedApi = ({ mode = "latest", page = 1, limit = 10 }) =>
 
 const getPostByIdApi = (postId) => axios.get(`/v1/api/posts/${postId}`);
 
+const deletePostApi = (postId) => axios.delete(`/v1/api/posts/${postId}`);
+
 const reactPostApi = (postId, type) => axios.post(`/v1/api/posts/${postId}/react`, { type });
 
 const commentPostApi = (postId, content) =>
@@ -25,6 +27,8 @@ const commentPostApi = (postId, content) =>
 
 const replyCommentApi = (commentId, postId, content) =>
   axios.post(`/v1/api/comments/${commentId}/replies`, { postId, content });
+
+const deleteCommentApi = (commentId) => axios.delete(`/v1/api/comments/${commentId}`);
 
 const sharePostApi = (postId, content) => axios.post(`/v1/api/posts/${postId}/share`, { content });
 
@@ -80,6 +84,12 @@ const getGroupApi = (groupId) => axios.get(`/v1/api/groups/${groupId}`);
 
 const updateGroupApi = (groupId, payload) => axios.patch(`/v1/api/groups/${groupId}`, payload);
 
+const uploadGroupAvatarApi = (groupId, payload) =>
+  axios.put(`/v1/api/groups/${groupId}/avatar`, payload);
+
+const uploadGroupCoverApi = (groupId, payload) =>
+  axios.put(`/v1/api/groups/${groupId}/cover`, payload);
+
 const joinGroupApi = (groupId) => axios.post(`/v1/api/groups/${groupId}/join`);
 
 const leaveGroupApi = (groupId) => axios.delete(`/v1/api/groups/${groupId}/leave`);
@@ -118,6 +128,8 @@ export {
   commentPostApi,
   createPostApi,
   createUserApi,
+  deleteCommentApi,
+  deletePostApi,
   followUserApi,
   forgotPasswordApi,
   friendRequestApi,
@@ -154,6 +166,8 @@ export {
   sharePostApi,
   updateGroupApi,
   updateGroupMemberRoleApi,
+  uploadGroupAvatarApi,
+  uploadGroupCoverApi,
   unblockUserApi,
   unfollowUserApi,
   getConversationsApi,

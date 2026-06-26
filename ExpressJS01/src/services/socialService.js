@@ -7,10 +7,13 @@ const Notification = require("../models/notification");
 const Post = require("../models/post");
 const Reaction = require("../models/reaction");
 const Report = require("../models/report");
+const Group = require("../models/group");
 const User = require("../models/user");
 const { processPostMediaFiles } = require("./mediaService");
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
+const idOf = (value) => String(value?._id || value);
+const isSameId = (a, b) => idOf(a) === idOf(b);
 
 const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -45,6 +48,30 @@ const hasBlockBetween = async (userA, userB) => {
     ],
   });
   return Boolean(block);
+};
+
+const isGroupMember = (group, userId) =>
+  group.members?.some((memberId) => isSameId(memberId, userId));
+
+const isGroupAdmin = (group, userId) =>
+  isSameId(group.createdBy, userId) ||
+  group.admins?.some((adminId) => isSameId(adminId, userId));
+
+const isGroupModerator = (group, userId) =>
+  group.moderators?.some((moderatorId) => isSameId(moderatorId, userId));
+
+const canModerateGroup = (group, userId) =>
+  isGroupAdmin(group, userId) || isGroupModerator(group, userId);
+
+const getPostGroup = async (post) => {
+  if (!post?.group) return null;
+  return Group.findById(post.group);
+};
+
+const canInteractWithPost = async (post, userId) => {
+  const group = await getPostGroup(post);
+  if (!group) return { allowed: true, group: null };
+  return { allowed: isGroupMember(group, userId), group };
 };
 
 const createNotification = async ({ recipient, actor, type, post, comment, metadata = {} }) => {
@@ -254,6 +281,9 @@ const reactPost = async (userId, postId, type = "like") => {
   if (!post) return { EC: 1, EM: "Không tìm thấy bài viết" };
   if (await hasBlockBetween(userId, post.author)) return { EC: 2, EM: "Không thể tương tác" };
 
+  const access = await canInteractWithPost(post, userId);
+  if (!access.allowed) return { EC: 3, EM: "Ban can la thanh vien nhom de tuong tac" };
+
   const existing = await Reaction.findOne({ post: postId, user: userId });
   if (existing && existing.type === type) {
     await existing.deleteOne();
@@ -284,9 +314,21 @@ const commentPost = async (userId, postId, content, parentComment = null) => {
   const post = await Post.findById(postId);
   if (!post) return { EC: 1, EM: "Không tìm thấy bài viết" };
   if (await hasBlockBetween(userId, post.author)) return { EC: 2, EM: "Không thể bình luận" };
+  const access = await canInteractWithPost(post, userId);
+  if (!access.allowed) return { EC: 4, EM: "Ban can la thanh vien nhom de binh luan" };
 
   const trimmed = content?.trim();
   if (!trimmed) return { EC: 3, EM: "Nội dung bình luận không được rỗng" };
+
+  if (parentComment) {
+    const parent = await Comment.findOne({
+      _id: parentComment,
+      post: postId,
+      parentComment: null,
+      deletedAt: null,
+    });
+    if (!parent) return { EC: 5, EM: "Khong tim thay binh luan can tra loi" };
+  }
 
   const mentionedUsers = await findMentionedUsers(trimmed);
   const comment = await Comment.create({
@@ -329,10 +371,61 @@ const commentPost = async (userId, postId, content, parentComment = null) => {
   return { EC: 0, EM: "Đã bình luận", data };
 };
 
+const deleteComment = async (userId, commentId) => {
+  const comment = await Comment.findById(commentId);
+  if (!comment || comment.deletedAt) return { EC: 1, EM: "Khong tim thay binh luan" };
+
+  const post = await Post.findById(comment.post);
+  if (!post) return { EC: 2, EM: "Khong tim thay bai viet" };
+
+  const group = await getPostGroup(post);
+  const canDelete =
+    isSameId(comment.author, userId) ||
+    isSameId(post.author, userId) ||
+    (group && canModerateGroup(group, userId));
+
+  if (!canDelete) return { EC: 3, EM: "Ban khong co quyen xoa binh luan nay" };
+
+  const deleteFilter = {
+    deletedAt: null,
+    $or: [{ _id: comment._id }, { parentComment: comment._id }],
+  };
+  const deletedCount = await Comment.countDocuments(deleteFilter);
+  await Comment.updateMany(deleteFilter, { deletedAt: new Date() });
+  await Post.findByIdAndUpdate(post._id, {
+    $inc: { "stats.comments": -deletedCount },
+  });
+
+  return { EC: 0, EM: "Da xoa binh luan", data: { deletedCount } };
+};
+
+const deletePost = async (userId, postId) => {
+  const post = await Post.findById(postId);
+  if (!post) return { EC: 1, EM: "Khong tim thay bai viet" };
+
+  const group = await getPostGroup(post);
+  const canDelete = isSameId(post.author, userId) || (group && canModerateGroup(group, userId));
+  if (!canDelete) return { EC: 2, EM: "Ban khong co quyen xoa bai viet nay" };
+
+  await Promise.all([
+    Comment.updateMany({ post: postId, deletedAt: null }, { deletedAt: new Date() }),
+    Reaction.deleteMany({ post: postId }),
+    Post.deleteOne({ _id: postId }),
+  ]);
+
+  return { EC: 0, EM: "Da xoa bai viet" };
+};
+
 const sharePost = async (userId, postId, content = "") => {
   const sourcePost = await Post.findById(postId);
   if (!sourcePost) return { EC: 1, EM: "Không tìm thấy bài viết" };
   if (await hasBlockBetween(userId, sourcePost.author)) return { EC: 2, EM: "Không thể chia sẻ" };
+
+  const access = await canInteractWithPost(sourcePost, userId);
+  if (!access.allowed) return { EC: 3, EM: "Ban can la thanh vien nhom de chia se" };
+  if (access.group?.privacy === "private") {
+    return { EC: 4, EM: "Khong the chia se bai viet trong nhom rieng tu" };
+  }
 
   const sharedContent = content?.trim() || "Đã chia sẻ một bài viết";
   const mentionedUsers = await findMentionedUsers(sharedContent);
@@ -582,6 +675,9 @@ module.exports = {
   blockUser,
   commentPost,
   createPost,
+  decoratePosts,
+  deleteComment,
+  deletePost,
   followUser,
   getFeed,
   getNotifications,
