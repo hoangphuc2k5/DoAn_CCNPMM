@@ -77,20 +77,7 @@ const userSchema = new mongoose.Schema(
       default: null,
       select: false,
     },
-    twoFactorEnabled: {
-      type: Boolean,
-      default: false,
-    },
-    twoFactorCodeHash: {
-      type: String,
-      default: "",
-      select: false,
-    },
-    twoFactorExpiresAt: {
-      type: Date,
-      default: null,
-      select: false,
-    },
+    // Two-factor auth removed
     lastLoginAt: {
       type: Date,
       default: null,
@@ -109,8 +96,9 @@ const userSchema = new mongoose.Schema(
     },
     gender: {
       type: String,
-      enum: ["Male", "Female", "Other"],
-      default: "Other",
+      enum: ["male", "female", "other"],
+      lowercase: true,
+      default: "other",
     },
     createdAt: {
       type: Date,

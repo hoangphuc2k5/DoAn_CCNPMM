@@ -7,13 +7,12 @@ const auth = async (req, res, next) => {
     "/",
     "/register",
     "/login",
-    "/login/google",
-    "/login/verify-2fa",
     "/forgot-password",
     "/reset-password",
     "/verify-email",
     "/verify-email/resend",
     "/captcha",
+    "/search",
   ];
   if (publicPaths.includes(req.path)) {
     return next();

@@ -6,15 +6,12 @@ const {
   getDeviceHistoryService,
   getProfileService,
   getUserService,
-  googleLoginService,
   loginService,
   logoutService,
   resendVerificationOtpService,
   resetPasswordService,
-  toggleTwoFactorService,
   updateProfileService,
   verifyEmailOtpService,
-  verifyTwoFactorLoginService,
 } = require("../services/userService");
 const {
   createCaptchaChallenge,
@@ -47,25 +44,8 @@ const handleLogin = async (req, res) => {
   return res.status(200).json(data);
 };
 
-const verifyTwoFactorLogin = async (req, res) => {
-  const { tempToken, otp } = req.body;
-  const data = await verifyTwoFactorLoginService(tempToken, otp, {
-    ipAddress: req.ip,
-    userAgent: req.headers["user-agent"],
-    headers: req.headers,
-  });
-  return res.status(200).json(data);
-};
 
-const loginWithGoogle = async (req, res) => {
-  const { idToken } = req.body;
-  const data = await googleLoginService(idToken, {
-    ipAddress: req.ip,
-    userAgent: req.headers["user-agent"],
-    headers: req.headers,
-  });
-  return res.status(200).json(data);
-};
+
 
 const getUser = async (req, res) => {
   const data = await getUserService(req.user?._id);
@@ -148,11 +128,6 @@ const getDeviceHistory = async (req, res) => {
   return res.status(200).json(data);
 };
 
-const toggleTwoFactor = async (req, res) => {
-  const { enabled, password } = req.body;
-  const data = await toggleTwoFactorService(req.user._id, enabled, password);
-  return res.status(200).json(data);
-};
 
 module.exports = {
   changePassword,
@@ -165,12 +140,9 @@ module.exports = {
   getProfile,
   getUser,
   handleLogin,
-  loginWithGoogle,
   logout,
   resendVerificationOtp,
   resetPassword,
-  toggleTwoFactor,
   updateProfile,
   verifyEmailOtp,
-  verifyTwoFactorLogin,
 };

@@ -281,6 +281,24 @@ const HomePage = () => {
   const isLoggedIn = Boolean(isAuthenticated);
   const displayName = user?.name || user?.email || "User";
 
+  // If user is not authenticated, show a minimal landing page that only allows login
+  if (!isLoggedIn) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", padding: 24 }}>
+        <Card style={{ width: 780, textAlign: "center" }}>
+          <Typography.Title level={2}>Chào mừng đến với Tegram</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            Tegram là nền tảng chia sẻ nội dung và kết nối cộng đồng. Đăng nhập để bắt đầu khám phá.
+          </Typography.Paragraph>
+          <div style={{ marginTop: 20, display: "flex", justifyContent: "center", gap: 12 }}>
+            <Button type="primary" size="large" onClick={() => navigate('/login')}>Đăng nhập</Button>
+            <Button type="default" size="large" onClick={() => navigate('/intro')}>Tìm hiểu thêm</Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   // Infinite scroll observer
   useEffect(() => {
     if (!hasMore || loadingFeed || !isLoggedIn) return undefined;
@@ -444,7 +462,17 @@ const HomePage = () => {
     setPostMediaFiles((prev) => prev.filter((file) => file.uid !== uid));
   };
 
+  const requireAuthentication = (actionName) => {
+    if (!isAuthenticated) {
+      message.warning(`Vui lòng đăng nhập để ${actionName}`);
+      navigate("/login");
+      return false;
+    }
+    return true;
+  };
+
   const handleReact = async (postId, type) => {
+    if (!requireAuthentication("thích bài viết")) return;
     const before = postById[postId];
     const res = await reactPostApi(postId, type);
     if (res?.EC === 0) {
@@ -467,6 +495,7 @@ const HomePage = () => {
   };
 
   const handleComment = async (postId, contentOverride) => {
+    if (!requireAuthentication("bình luận")) return;
     const content = (contentOverride ?? commentDrafts[postId] ?? "").trim();
     if (!content) return;
     const res = await commentPostApi(postId, content);
@@ -483,6 +512,7 @@ const HomePage = () => {
   };
 
   const handleReply = async (postId, commentId, contentOverride) => {
+    if (!requireAuthentication("trả lời bình luận")) return;
     const content = (contentOverride ?? replyDrafts[commentId] ?? "").trim();
     if (!content) return;
     const res = await replyCommentApi(commentId, postId, content);
@@ -503,6 +533,7 @@ const HomePage = () => {
   };
 
   const handleShare = (postId) => {
+    if (!requireAuthentication("chia sẻ bài viết")) return;
     let content = "";
     Modal.confirm({
       title: "Chia sẻ bài viết",
@@ -667,6 +698,11 @@ const HomePage = () => {
     return {
       items,
       onClick: async ({ key }) => {
+        if (!isAuthenticated) {
+          message.warning("Vui long dang nhap de thuc hien hanh dong nay");
+          navigate("/login");
+          return;
+        }
         if (key === "save") {
           const res = post.isSaved ? await unsavePostApi(post._id) : await savePostApi(post._id);
           if (res?.EC === 0) {

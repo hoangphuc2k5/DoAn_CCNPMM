@@ -1,10 +1,5 @@
 import { Link } from "react-router-dom";
 import appLogo from "../../Logo/logo.jpg";
-
-const previousIcon =
-  "http://localhost:3845/assets/3fde87c52ef21c81f7a5495d72b686f38cdd8384.svg";
-const nextIcon =
-  "http://localhost:3845/assets/92e3778f38c26fc50e2e3ca11a121a8f0acffe37.svg";
 const googleIcon =
   "http://localhost:3845/assets/e7272a1b9b5fba11852f805cecac75e832328b3d.svg";
 
@@ -21,9 +16,6 @@ const AuthLayout = ({
   formLabel = "--- Đăng nhập ---",
   children,
   footer,
-  onGoogleLogin,
-  googleLoading = false,
-  showGoogleButton = true,
 }) => {
   return (
     <div className="min-h-screen bg-white px-6 py-6">
@@ -44,14 +36,6 @@ const AuthLayout = ({
                   Tham gia cộng đồng hàng triệu người dùng
                 </div>
               </div>
-            </div>
-
-            <div className="flex items-center justify-center gap-4 py-2">
-              <img src={previousIcon} alt="" className="h-4 w-4" />
-              <span className="h-[14px] w-[14px] rounded-full bg-[#7f00fd]" />
-              <span className="h-[14px] w-[14px] rounded-full bg-[#d1d5dc]" />
-              <span className="h-[14px] w-[14px] rounded-full bg-[#d1d5dc]" />
-              <img src={nextIcon} alt="" className="h-4 w-4" />
             </div>
           </div>
 
@@ -83,23 +67,6 @@ const AuthLayout = ({
                   })}
                 </div>
               </div>
-
-              {showGoogleButton ? (
-                <div className="flex flex-col gap-2">
-                  <p className="text-center text-[14px] font-light leading-5 text-[#515151]">
-                    Hoặc
-                  </p>
-                  <button
-                    type="button"
-                    onClick={onGoogleLogin}
-                    disabled={googleLoading}
-                    className="flex h-[74px] w-full items-center justify-center gap-3 rounded-[4px] bg-[#7f00fd] text-[16px] font-bold leading-6 text-white disabled:opacity-60"
-                  >
-                    <img src={googleIcon} alt="" className="h-5 w-5" />
-                    <span>{googleLoading ? "Đang xử lý..." : "Tiếp tục với Google"}</span>
-                  </button>
-                </div>
-              ) : null}
 
               <p className="text-center text-[14px] font-light leading-5 text-[#515151]">
                 {formLabel}

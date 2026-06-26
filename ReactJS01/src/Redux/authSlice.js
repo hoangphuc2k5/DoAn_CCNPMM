@@ -7,13 +7,11 @@ import {
   getAccountApi,
   getDeviceHistoryApi,
   loginApi,
-  loginWithGoogleApi,
   logoutApi,
   resendVerifyEmailOtpApi,
   resetPasswordApi,
-  toggleTwoFactorApi,
   verifyEmailOtpApi,
-  verifyTwoFactorApi,
+  
 } from "../util/api";
 
 const initialState = {
@@ -25,7 +23,7 @@ const initialState = {
   error: "",
   message: "",
   captcha: null,
-  tempToken: "",
+  // tempToken removed (2FA disabled)
   pendingVerificationEmail: "",
   deviceHistory: [],
 };
@@ -44,17 +42,7 @@ export const loginThunk = createAsyncThunk(
   }
 );
 
-export const loginWithGoogleThunk = createAsyncThunk(
-  "auth/loginWithGoogle",
-  async ({ idToken }, { rejectWithValue }) => {
-    const res = await loginWithGoogleApi(idToken);
-    if (res && res.EC === 0) {
-      localStorage.setItem("access_token", res.access_token);
-      return res;
-    }
-    return rejectWithValue(res?.EM || "Đăng nhập Google thất bại.");
-  },
-);
+
 
 export const registerThunk = createAsyncThunk(
   "auth/register",
@@ -123,12 +111,8 @@ export const resendVerifyEmailThunk = createAsyncThunk(
 export const verifyTwoFactorThunk = createAsyncThunk(
   "auth/verifyTwoFactor",
   async ({ tempToken, otp }, { rejectWithValue }) => {
-    const res = await verifyTwoFactorApi(tempToken, otp);
-    if (res && res.EC === 0) {
-      localStorage.setItem("access_token", res.access_token);
-      return res;
-    }
-    return rejectWithValue(res?.EM || "Không thể xác minh 2FA.");
+    // 2FA removed
+    return rejectWithValue("2FA disabled");
   },
 );
 
@@ -153,9 +137,8 @@ export const changePasswordThunk = createAsyncThunk(
 export const toggleTwoFactorThunk = createAsyncThunk(
   "auth/toggleTwoFactor",
   async ({ enabled, password }, { rejectWithValue }) => {
-    const res = await toggleTwoFactorApi(enabled, password);
-    if (res && res.EC === 0) return res;
-    return rejectWithValue(res?.EM || "Không thể cập nhật 2FA.");
+    // 2FA removed
+    return rejectWithValue("2FA disabled");
   },
 );
 
@@ -194,7 +177,6 @@ const authSlice = createSlice({
         state.loading = true;
         state.error = "";
         state.message = "";
-        state.tempToken = "";
       })
       .addCase(loginThunk.fulfilled, (state, action) => {
         state.loading = false;
@@ -205,20 +187,11 @@ const authSlice = createSlice({
           state.isAuthenticated = false;
           state.accessToken = "";
           state.user = null;
-          state.tempToken = "";
           state.pendingVerificationEmail = action.payload.email || "";
-        } else if (action.payload.requiresTwoFactor) {
-          localStorage.removeItem("access_token");
-          state.isAuthenticated = false;
-          state.accessToken = "";
-          state.user = null;
-          state.tempToken = action.payload.temp_token;
-          state.pendingVerificationEmail = "";
         } else {
           state.isAuthenticated = true;
           state.accessToken = action.payload.access_token;
           state.user = action.payload.user;
-          state.tempToken = "";
           state.pendingVerificationEmail = "";
         }
       })
@@ -260,23 +233,8 @@ const authSlice = createSlice({
           role: action.payload.role,
           status: action.payload.status,
           isEmailVerified: action.payload.isEmailVerified,
-          twoFactorEnabled: action.payload.twoFactorEnabled,
           createdBy: action.payload.createdBy,
         };
-      })
-      .addCase(loginWithGoogleThunk.pending, (state) => {
-        state.loading = true;
-        state.error = "";
-      })
-      .addCase(loginWithGoogleThunk.fulfilled, (state, action) => {
-        state.loading = false;
-        state.isAuthenticated = true;
-        state.accessToken = action.payload.access_token;
-        state.user = action.payload.user;
-      })
-      .addCase(loginWithGoogleThunk.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload || "Đăng nhập Google thất bại.";
       })
       .addCase(fetchAccountThunk.rejected, (state, action) => {
         state.appLoading = false;
@@ -331,22 +289,7 @@ const authSlice = createSlice({
       .addCase(resendVerifyEmailThunk.rejected, (state, action) => {
         state.error = action.payload || "Không thể gửi lại OTP.";
       })
-      .addCase(verifyTwoFactorThunk.pending, (state) => {
-        state.loading = true;
-        state.error = "";
-      })
-      .addCase(verifyTwoFactorThunk.fulfilled, (state, action) => {
-        state.loading = false;
-        state.isAuthenticated = true;
-        state.accessToken = action.payload.access_token;
-        state.user = action.payload.user;
-        state.tempToken = "";
-        state.pendingVerificationEmail = "";
-      })
-      .addCase(verifyTwoFactorThunk.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload || "Không thể xác minh 2FA.";
-      })
+      
       .addCase(fetchCaptchaThunk.fulfilled, (state, action) => {
         state.captcha = action.payload;
       })
@@ -363,15 +306,7 @@ const authSlice = createSlice({
         state.loading = false;
         state.error = action.payload || "Không thể đổi mật khẩu.";
       })
-      .addCase(toggleTwoFactorThunk.fulfilled, (state, action) => {
-        state.message = action.payload.EM || "";
-        if (state.user) {
-          state.user.twoFactorEnabled = action.payload.data?.twoFactorEnabled;
-        }
-      })
-      .addCase(toggleTwoFactorThunk.rejected, (state, action) => {
-        state.error = action.payload || "Không thể cập nhật 2FA.";
-      })
+      
       .addCase(fetchDeviceHistoryThunk.fulfilled, (state, action) => {
         state.deviceHistory = action.payload || [];
       })

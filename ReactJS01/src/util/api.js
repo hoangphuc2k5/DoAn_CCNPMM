@@ -3,9 +3,6 @@ import axios from "./axios.customize";
 const getCaptchaApi = () => axios.get("/v1/api/captcha");
 const createUserApi = (payload) => axios.post("/v1/api/register", payload);
 const loginApi = (payload) => axios.post("/v1/api/login", payload);
-const loginWithGoogleApi = (idToken) => axios.post("/v1/api/login/google", { idToken });
-const verifyTwoFactorApi = (tempToken, otp) =>
-  axios.post("/v1/api/login/verify-2fa", { tempToken, otp });
 const getUserApi = () => axios.get("/v1/api/user");
 const getAccountApi = () => axios.get("/v1/api/account");
 const logoutApi = () => axios.post("/v1/api/account/logout");
@@ -17,8 +14,6 @@ const resendVerifyEmailOtpApi = (email) =>
 const changePasswordApi = (currentPassword, newPassword) =>
   axios.post("/v1/api/account/change-password", { currentPassword, newPassword });
 const deleteAccountApi = (password) => axios.delete("/v1/api/account", { data: { password } });
-const toggleTwoFactorApi = (enabled, password) =>
-  axios.post("/v1/api/account/two-factor", { enabled, password });
 const getDeviceHistoryApi = () => axios.get("/v1/api/account/device-history");
 
 const createPostApi = (payload) => axios.post("/v1/api/posts", payload);
@@ -174,7 +169,6 @@ export {
   leaveGroupApi,
   leaveGroupEventApi,
   loginApi,
-  loginWithGoogleApi,
   logoutApi,
   markAllNotificationsReadApi,
   markNotificationReadApi,
@@ -200,7 +194,6 @@ export {
   savePostApi,
   sharePostApi,
   subscribePushApi,
-  toggleTwoFactorApi,
   unblockUserApi,
   unfollowUserApi,
   unfriendUserApi,
@@ -215,5 +208,4 @@ export {
   uploadGroupCoverApi,
   uploadPostMediaApi,
   verifyEmailOtpApi,
-  verifyTwoFactorApi,
 };

@@ -69,8 +69,8 @@ const RegisterPage = () => {
   return (
     <AuthLayout
       title="Tạo tài khoản mới"
+      activeTab="register"
       subtitle="Đăng ký để bắt đầu sử dụng feed, chat, thông báo và khu vực cộng đồng."
-      showGoogleButton={false}
       footer={
         <span>
           Đã có tài khoản?{" "}

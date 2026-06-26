@@ -6,7 +6,6 @@ import Input from "../components/ui/Input";
 import {
   changePasswordThunk,
   fetchDeviceHistoryThunk,
-  toggleTwoFactorThunk,
 } from "../Redux/authSlice";
 import { deleteAccountApi } from "../util/api";
 
@@ -19,7 +18,7 @@ const SecurityPage = () => {
     currentPassword: "",
     newPassword: "",
   });
-  const [twoFactorPassword, setTwoFactorPassword] = useState("");
+  
   const [deletePassword, setDeletePassword] = useState("");
 
   useEffect(() => {
@@ -37,14 +36,7 @@ const SecurityPage = () => {
     setPasswordForm({ currentPassword: "", newPassword: "" });
   };
 
-  const handleToggle2FA = async (checked) => {
-    if (!twoFactorPassword) {
-      message.error("Nhập mật khẩu hiện tại để thay đổi 2FA.");
-      return;
-    }
-    await dispatch(toggleTwoFactorThunk({ enabled: checked, password: twoFactorPassword }));
-    setTwoFactorPassword("");
-  };
+  
 
   const handleDeleteAccount = async () => {
     const res = await deleteAccountApi(deletePassword);
@@ -61,7 +53,7 @@ const SecurityPage = () => {
       <Card>
         <Typography.Title level={3}>Bảo mật tài khoản</Typography.Title>
         <Typography.Paragraph type="secondary">
-          Quản lý mật khẩu, 2FA và lịch sử đăng nhập theo thiết bị cho tài khoản {user?.email}.
+          Quản lý mật khẩu và lịch sử đăng nhập theo thiết bị cho tài khoản {user?.email}.
         </Typography.Paragraph>
       </Card>
 
@@ -91,21 +83,7 @@ const SecurityPage = () => {
         </form>
       </Card>
 
-      <Card title="Xác thực 2 lớp">
-        <div className="flex flex-col gap-4">
-          <Input
-            label="Nhập mật khẩu để thay đổi 2FA"
-            name="twoFactorPassword"
-            type="password"
-            value={twoFactorPassword}
-            onChange={(e) => setTwoFactorPassword(e.target.value)}
-          />
-          <div className="flex items-center justify-between">
-            <Typography.Text>Bật xác thực 2 lớp qua OTP email</Typography.Text>
-            <Switch checked={Boolean(user?.twoFactorEnabled)} onChange={handleToggle2FA} />
-          </div>
-        </div>
-      </Card>
+      {/* 2FA removed */}
 
       <Card title="Lịch sử đăng nhập thiết bị">
         <List

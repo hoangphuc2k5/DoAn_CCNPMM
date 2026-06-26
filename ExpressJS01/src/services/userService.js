@@ -58,7 +58,6 @@ const publicUser = (user) => ({
   role: normalizeRole(user.role),
   status: normalizeStatus(user.status),
   isEmailVerified: Boolean(user.isEmailVerified),
-  twoFactorEnabled: Boolean(user.twoFactorEnabled),
   authProvider: user.authProvider || "local",
 });
 
@@ -121,13 +120,6 @@ const sendResetCodeToUser = async (user) => {
   await sendOtpEmail({ to: user.email, code, purpose: "reset_password" });
 };
 
-const sendTwoFactorCodeToUser = async (user) => {
-  const code = createOtpCode();
-  user.twoFactorCodeHash = hashCode(code);
-  user.twoFactorExpiresAt = addMinutes(OTP_EXPIRE_MINUTES);
-  await user.save();
-  await sendOtpEmail({ to: user.email, code, purpose: "two_factor" });
-};
 
 const issueLoginResult = async (user, context = {}) => {
   user.failedLoginAttempts = 0;
@@ -212,7 +204,7 @@ const loginService = async (email, password, context = {}) => {
   try {
     const safeEmail = String(email || "").trim().toLowerCase();
     const user = await User.findOne({ email: safeEmail, deletedAt: null }).select(
-      "+emailVerificationCodeHash +emailVerificationExpiresAt +twoFactorCodeHash +twoFactorExpiresAt",
+      "+emailVerificationCodeHash +emailVerificationExpiresAt",
     );
 
     if (!user) {
@@ -258,16 +250,6 @@ const loginService = async (email, password, context = {}) => {
       };
     }
 
-    if (user.twoFactorEnabled) {
-      await sendTwoFactorCodeToUser(user);
-      return {
-        EC: 0,
-        requiresTwoFactor: true,
-        temp_token: createTempToken({ userId: user._id, purpose: "login_2fa" }),
-        EM: "Mã xác minh 2FA đã được gửi đến email của bạn.",
-      };
-    }
-
     return issueLoginResult(user, context);
   } catch (error) {
     console.log(error);
@@ -275,35 +257,6 @@ const loginService = async (email, password, context = {}) => {
   }
 };
 
-const verifyTwoFactorLoginService = async (tempToken, otp, context = {}) => {
-  try {
-    const decoded = jwt.verify(tempToken, process.env.JWT_SECRET);
-    if (decoded.purpose !== "login_2fa") {
-      return { EC: 1, EM: "Token xác minh không hợp lệ." };
-    }
-
-    const user = await User.findById(decoded.userId).select("+twoFactorCodeHash +twoFactorExpiresAt");
-    if (!user || !user.twoFactorEnabled) {
-      return { EC: 1, EM: "Không tìm thấy phiên xác minh 2FA." };
-    }
-
-    if (!user.twoFactorCodeHash || !user.twoFactorExpiresAt || user.twoFactorExpiresAt < new Date()) {
-      return { EC: 1, EM: "Mã 2FA đã hết hạn." };
-    }
-
-    if (hashCode(otp) !== user.twoFactorCodeHash) {
-      return { EC: 1, EM: "Mã 2FA không chính xác." };
-    }
-
-    user.twoFactorCodeHash = "";
-    user.twoFactorExpiresAt = null;
-    await user.save();
-
-    return issueLoginResult(user, context);
-  } catch (error) {
-    return { EC: 1, EM: "Phiên xác minh 2FA không hợp lệ hoặc đã hết hạn." };
-  }
-};
 
 const verifyEmailOtpService = async (email, otp) => {
   const safeEmail = String(email || "").trim().toLowerCase();
@@ -535,79 +488,6 @@ const getDeviceHistoryService = async (userId) => {
   return { EC: 0, data: sessions };
 };
 
-const toggleTwoFactorService = async (userId, enabled, password) => {
-  const user = await User.findOne({ _id: userId, deletedAt: null });
-  if (!user) {
-    return { EC: 1, EM: "Không tìm thấy tài khoản." };
-  }
-
-  const isMatchPassword = await bcrypt.compare(password || "", user.password);
-  if (!isMatchPassword) {
-    return { EC: 1, EM: "Mật khẩu không chính xác." };
-  }
-
-  user.twoFactorEnabled = Boolean(enabled);
-  if (!enabled) {
-    user.twoFactorCodeHash = "";
-    user.twoFactorExpiresAt = null;
-  }
-  await user.save();
-
-  return {
-    EC: 0,
-    EM: enabled ? "Đã bật xác thực 2 lớp." : "Đã tắt xác thực 2 lớp.",
-    data: publicUser(user),
-  };
-};
-
-const googleLoginService = async (idToken, context = {}) => {
-  try {
-    if (!idToken) {
-      return { EC: 1, EM: "Thiếu Google ID token." };
-    }
-
-    const response = await axios.get("https://oauth2.googleapis.com/tokeninfo", {
-      params: { id_token: idToken },
-      timeout: 10000,
-    });
-
-    const payload = response.data || {};
-    if (!payload.email || payload.email_verified !== "true") {
-      return { EC: 1, EM: "Tài khoản Google chưa xác thực email." };
-    }
-
-    if (process.env.GOOGLE_CLIENT_ID && payload.aud !== process.env.GOOGLE_CLIENT_ID) {
-      return { EC: 1, EM: "Google client id không khớp cấu hình." };
-    }
-
-    let user = await User.findOne({ email: String(payload.email).toLowerCase(), deletedAt: null });
-    if (!user) {
-      const randomPassword = crypto.randomBytes(16).toString("hex");
-      user = await User.create({
-        name: payload.name || payload.email.split("@")[0],
-        email: String(payload.email).toLowerCase(),
-        password: await bcrypt.hash(randomPassword, saltRounds),
-        role: "user",
-        status: "active",
-        authProvider: "google",
-        googleId: payload.sub,
-        isEmailVerified: true,
-        avatar: payload.picture || "",
-      });
-    } else {
-      user.authProvider = "google";
-      user.googleId = payload.sub;
-      user.isEmailVerified = true;
-      if (!user.avatar && payload.picture) user.avatar = payload.picture;
-      await user.save();
-    }
-
-    return issueLoginResult(user, context);
-  } catch (error) {
-    console.error("Google login failed:", error.message);
-    return { EC: 1, EM: "Không thể đăng nhập bằng Google." };
-  }
-};
 
 module.exports = {
   changePasswordService,
@@ -617,13 +497,10 @@ module.exports = {
   getDeviceHistoryService,
   getProfileService,
   getUserService,
-  googleLoginService,
   loginService,
   logoutService,
   resendVerificationOtpService,
   resetPasswordService,
-  toggleTwoFactorService,
   updateProfileService,
   verifyEmailOtpService,
-  verifyTwoFactorLoginService,
 };

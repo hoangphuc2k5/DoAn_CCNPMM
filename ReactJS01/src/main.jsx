@@ -30,7 +30,7 @@ import SavedPage from "./pages/saved.jsx";
 import ResetPasswordPage from "./pages/reset-password.jsx";
 import SecurityPage from "./pages/security.jsx";
 import VerifyEmailPage from "./pages/verify-email.jsx";
-import VerifyTwoFactorPage from "./pages/verify-2fa.jsx";
+import IntroPage from "./pages/intro.jsx";
 import "./styles/global.css";
 
 const ProfileRedirect = () => {
@@ -105,12 +105,13 @@ const router = createBrowserRouter([
       { path: "groups", element: <GroupsPage /> },
       { path: "groups/:groupId", element: <GroupsPage /> },
       { path: "account/security", element: <SecurityPage /> },
+      { path: "intro", element: <IntroPage /> },
       { path: "admin", element: <AdminRoute /> },
     ],
   },
   { path: "/register", element: <RegisterPage />, errorElement: <RouteError /> },
   { path: "/login", element: <LoginPage />, errorElement: <RouteError /> },
-  { path: "/login/verify-2fa", element: <VerifyTwoFactorPage />, errorElement: <RouteError /> },
+  // 2FA page removed
   { path: "/verify-email", element: <VerifyEmailPage />, errorElement: <RouteError /> },
   {
     path: "/forgot-password",

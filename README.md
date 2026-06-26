@@ -19,7 +19,6 @@
   - Đăng nhập / đăng xuất
   - Quên mật khẩu
   - Xác thực Email / OTP
-  - Đăng nhập Google
   - Chỉnh sửa hồ sơ
   - Đổi mật khẩu
   - Xóa tài khoản

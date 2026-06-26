@@ -1,6 +1,6 @@
 const searchService = require("../services/searchService");
 
-const currentUserId = (req) => req.user._id;
+const currentUserId = (req) => (req.user ? req.user._id : null);
 
 const search = async (req, res) => {
   try {

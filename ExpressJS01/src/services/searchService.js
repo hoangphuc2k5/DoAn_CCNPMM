@@ -46,15 +46,18 @@ const search = async (userId, keyword = "") => {
       .populate("author", "name email avatar"),
 
     // 2. Search users
-    User.find({
-      _id: { $nin: [...blockedUserIds, String(userId)].map(toObjectId) },
-      $or: [
-        { name: pattern },
-        { email: new RegExp(`${escapeRegex(normalized)}[^@]*@`, "i") }
-      ],
-    })
-      .select("-password")
-      .limit(10),
+    (() => {
+      const exclusions = [...blockedUserIds];
+      if (userId) exclusions.push(String(userId));
+      return User.find({
+        _id: { $nin: exclusions.map(toObjectId) },
+        $or: [
+          { name: pattern },
+          { email: new RegExp(`${escapeRegex(normalized)}[^@]*@`, "i") }
+        ],
+      }).select("-password").limit(10);
+    })(),
+    
 
     // 3. Search groups
     Group.find({

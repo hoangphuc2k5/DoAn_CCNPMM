@@ -315,14 +315,15 @@ const Sidebar = () => {
               <span>Trang chủ</span>
             </Link>
 
-            {/* Tìm kiếm */}
-            <Link
-              to="/search"
-              className={`sidebar-item ${activeKey === "search" ? "active" : ""}`}
-            >
-              <SearchOutlined />
-              <span>Tìm kiếm</span>
-            </Link>
+            {isAuthenticated && (
+              <Link
+                to="/search"
+                className={`sidebar-item ${activeKey === "search" ? "active" : ""}`}
+              >
+                <SearchOutlined />
+                <span>Tìm kiếm</span>
+              </Link>
+            )}
 
             {isAuthenticated && (
               <>

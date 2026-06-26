@@ -10,14 +10,11 @@ const {
   getProfile,
   getUser,
   handleLogin,
-  loginWithGoogle,
   logout,
   resendVerificationOtp,
   resetPassword,
-  toggleTwoFactor,
   updateProfile,
   verifyEmailOtp,
-  verifyTwoFactorLogin,
 } = require("../controllers/userController");
 const adminController = require("../controllers/adminController");
 const profileController = require("../controllers/profileController");
@@ -54,8 +51,6 @@ routerAPI.get("/", (req, res) => res.status(200).json("Hello world api"));
 routerAPI.get("/captcha", getCaptcha);
 routerAPI.post("/register", rateLimit({ keyPrefix: "register", max: 5 }), createUser);
 routerAPI.post("/login", rateLimit({ keyPrefix: "login", max: 10 }), handleLogin);
-routerAPI.post("/login/google", rateLimit({ keyPrefix: "login-google", max: 10 }), loginWithGoogle);
-routerAPI.post("/login/verify-2fa", rateLimit({ keyPrefix: "login-2fa", max: 10 }), verifyTwoFactorLogin);
 routerAPI.post("/forgot-password", rateLimit({ keyPrefix: "forgot-password", max: 5 }), forgotPassword);
 routerAPI.post("/reset-password", rateLimit({ keyPrefix: "reset-password", max: 5 }), resetPassword);
 routerAPI.post("/verify-email", rateLimit({ keyPrefix: "verify-email", max: 8 }), verifyEmailOtp);
@@ -69,7 +64,7 @@ routerAPI.post("/account/logout", logout);
 routerAPI.post("/account/change-password", rateLimit({ keyPrefix: "change-password", max: 8 }), changePassword);
 routerAPI.delete("/account", deleteAccount);
 routerAPI.get("/account/device-history", getDeviceHistory);
-routerAPI.post("/account/two-factor", toggleTwoFactor);
+// two-factor endpoints removed
 
 routerAPI.put("/profile/me", profileController.updateProfile);
 routerAPI.put(
