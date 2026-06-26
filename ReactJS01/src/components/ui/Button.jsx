@@ -1,5 +1,3 @@
-import React from "react";
-
 const Button = ({
   type = "button",
   variant = "primary",
@@ -10,11 +8,11 @@ const Button = ({
   ...rest
 }) => {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-offset-2";
+    "inline-flex items-center justify-center gap-2 px-5 text-sm font-semibold transition focus:outline-none";
   const styles =
     variant === "ghost"
-      ? "border border-black/10 bg-transparent text-ink hover:border-reef hover:text-reef focus:ring-reef/30"
-      : "bg-reef text-white shadow-glow hover:-translate-y-0.5 hover:bg-ink focus:ring-reef/40";
+      ? "h-12 rounded-[14px] border border-[#7f00fd] bg-white text-[#7f00fd] hover:bg-[#f5f3ff]"
+      : "h-[74px] rounded-[4px] bg-[#7f00fd] text-[16px] font-bold leading-6 text-white hover:bg-[#6b00d7] disabled:bg-[#e5e7eb] disabled:text-[#99a1af]";
 
   return (
     <button

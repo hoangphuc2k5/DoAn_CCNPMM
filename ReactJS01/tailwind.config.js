@@ -18,6 +18,7 @@ export default {
         glow: "0 18px 60px rgba(12, 18, 26, 0.22)",
       },
     },
+    extend: {},
   },
   plugins: [],
 };
