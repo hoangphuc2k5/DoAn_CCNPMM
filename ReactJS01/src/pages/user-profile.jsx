@@ -38,6 +38,8 @@ const UserProfilePage = () => {
     activeTab,
     postsCursor,
     mediaCursor,
+    postsHasNextPage,
+    mediaHasNextPage,
   } = useSelector((state) => state.userProfile);
 
   const { user: currentUser } = useSelector((state) => state.auth);
@@ -129,7 +131,7 @@ const UserProfilePage = () => {
             <PostsList
               posts={posts}
               loading={loading}
-              hasNextPage={posts.length > 0}
+              hasNextPage={postsHasNextPage}
               onLoadMore={handleLoadMorePosts}
             />
           )}
@@ -143,7 +145,7 @@ const UserProfilePage = () => {
             <MediaGrid
               media={media}
               loading={loading}
-              hasNextPage={media.length > 0}
+              hasNextPage={mediaHasNextPage}
               onLoadMore={handleLoadMoreMedia}
             />
           )}

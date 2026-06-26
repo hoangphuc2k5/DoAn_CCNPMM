@@ -105,6 +105,10 @@ const router = createBrowserRouter(
           path: "groups",
           element: withSuspense(<GroupsPage />),
         },
+        {
+          path: "groups/:groupId",
+          element: withSuspense(<GroupsPage />),
+        },
       ],
     },
     {

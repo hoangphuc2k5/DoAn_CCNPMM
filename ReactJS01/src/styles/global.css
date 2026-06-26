@@ -673,7 +673,7 @@ button {
 }
 
 .tg-tabs.detail {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   margin-top: 0;
 }
 
@@ -1161,6 +1161,43 @@ button {
   max-width: 760px;
 }
 
+.tg-moderation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--tg-line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.tg-moderation-row p {
+  margin: 8px 0 0;
+  color: #4b5563;
+  line-height: 1.45;
+}
+
+.tg-media-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.tg-media-gallery .ant-image {
+  width: 100%;
+  height: 100%;
+}
+
+.tg-media-tile,
+.tg-media-gallery .ant-image-img {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: #111827;
+  object-fit: cover;
+}
+
 .tg-empty-state {
   display: flex;
   align-items: center;
@@ -1243,6 +1280,279 @@ button {
 
 .comment-list {
   margin-top: 8px;
+}
+
+.comment-list-preview {
+  margin-top: 10px;
+}
+
+.comment-view-all.ant-btn {
+  height: auto;
+  margin-top: 4px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.comment-view-all.ant-btn:hover {
+  color: var(--fb-blue) !important;
+  background: transparent !important;
+}
+
+.comments-modal .ant-modal-body {
+  max-height: min(72vh, 720px);
+  overflow-y: auto;
+  padding-top: 8px;
+}
+
+.comments-modal-post {
+  margin-bottom: 12px !important;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: pre-line;
+}
+
+.comments-modal-composer {
+  margin-bottom: 12px;
+}
+
+.post-comments-modal .ant-modal-content {
+  overflow: hidden;
+  padding: 0;
+}
+
+.post-comments-modal .ant-modal-header {
+  margin: 0;
+  padding: 20px 64px 18px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+
+.post-comments-modal .ant-modal-close {
+  top: 14px;
+  right: 18px;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: #eef0f3;
+}
+
+.post-comments-modal .ant-modal-body {
+  padding: 0;
+}
+
+.post-comments-title {
+  color: #111827;
+  font-size: 24px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.post-dialog {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  max-height: min(78vh, 820px);
+}
+
+.post-dialog-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 18px 0;
+}
+
+.post-dialog-author {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.post-dialog-author strong,
+.post-dialog-author span {
+  display: block;
+}
+
+.post-dialog-author strong {
+  color: #111827;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.post-dialog-author span {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.post-dialog-content {
+  margin: 10px 0 12px !important;
+  color: #1f2937;
+  font-size: 16px;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.post-dialog-media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px;
+  margin: 0 -18px 12px;
+  background: #f3f4f6;
+}
+
+.post-dialog-media-grid .ant-image,
+.post-dialog-media-grid .ant-image-img,
+.post-dialog-media {
+  width: 100%;
+  max-height: 420px;
+  object-fit: cover;
+  background: #111827;
+}
+
+.post-dialog-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.post-dialog-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.post-dialog-actions .ant-btn {
+  color: #6b7280;
+  font-weight: 800;
+}
+
+.post-dialog-comments {
+  display: grid;
+  gap: 16px;
+  padding: 14px 0 18px;
+}
+
+.post-dialog-comment-thread {
+  display: grid;
+  gap: 8px;
+}
+
+.post-dialog-comment-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.post-dialog-comment-row.reply {
+  margin-left: 48px;
+}
+
+.post-dialog-comment-main {
+  min-width: 0;
+}
+
+.post-dialog-bubble-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.post-dialog-bubble {
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 16px;
+  background: #f0f2f5;
+  color: #111827;
+}
+
+.post-dialog-bubble strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 13px;
+}
+
+.post-dialog-bubble .ant-typography,
+.tg-comment-bubble .ant-typography,
+.comment-bubble .ant-typography,
+.reply-bubble .ant-typography {
+  margin-bottom: 0 !important;
+}
+
+.post-dialog-comment-menu.ant-btn {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  opacity: 0;
+  color: #6b7280;
+  transition:
+    opacity 0.16s ease,
+    background 0.16s ease;
+}
+
+.post-dialog-bubble-row:hover .post-dialog-comment-menu.ant-btn,
+.post-dialog-comment-menu.ant-btn.ant-dropdown-open {
+  opacity: 1;
+}
+
+.post-dialog-comment-menu.ant-btn:hover {
+  background: #eef0f3 !important;
+}
+
+.post-dialog-comment-actions {
+  display: flex;
+  gap: 12px;
+  padding: 4px 0 4px 10px;
+}
+
+.post-dialog-comment-actions button {
+  border: 0;
+  background: transparent;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.post-dialog-reply-input {
+  width: min(520px, 100%);
+  margin-top: 4px;
+}
+
+.post-dialog-reply-input .ant-input,
+.post-dialog-comment-input .ant-input {
+  border-color: transparent;
+  border-radius: 20px 0 0 20px !important;
+  background: #f0f2f5;
+}
+
+.post-dialog-reply-input .ant-btn,
+.post-dialog-comment-input .ant-btn {
+  border-radius: 0 20px 20px 0 !important;
+  background: #f0f2f5;
+}
+
+.post-dialog-composer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+  box-shadow: 0 -8px 20px rgba(15, 23, 42, 0.08);
+}
+
+.post-dialog-comment-input {
+  flex: 1;
 }
 
 .comment-item {

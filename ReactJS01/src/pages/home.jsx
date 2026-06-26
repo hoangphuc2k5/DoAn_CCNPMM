@@ -24,7 +24,9 @@ import {
   BellOutlined,
   CommentOutlined,
   DeleteOutlined,
+  EditOutlined,
   EllipsisOutlined,
+  EyeInvisibleOutlined,
   FlagOutlined,
   GlobalOutlined,
   HomeOutlined,
@@ -54,10 +56,14 @@ import {
   markNotificationReadApi,
   reactPostApi,
   replyCommentApi,
+  reportCommentApi,
   reportPostApi,
   sharePostApi,
+  deletePostApi,
+  updatePostApi,
 } from "../util/api";
 import { getMediaUrl } from "../util/media";
+import PostCommentsModal from "../components/post/PostCommentsModal";
 
 const reactionOptions = [
   { value: "like", label: "Like" },
@@ -116,6 +122,8 @@ const HomePage = () => {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [highlightedPostId, setHighlightedPostId] = useState("");
   const [highlightedCommentId, setHighlightedCommentId] = useState("");
+  const [commentModalPostId, setCommentModalPostId] = useState("");
+  const [hiddenPostIds, setHiddenPostIds] = useState([]);
 
   const isLoggedIn = Boolean(isAuthenticated);
   const displayName = user?.name || user?.email || "User";
@@ -168,6 +176,16 @@ const HomePage = () => {
         return acc;
       }, {}),
     [posts],
+  );
+
+  const activeCommentPost = useMemo(
+    () => posts.find((post) => post._id === commentModalPostId) || null,
+    [commentModalPostId, posts],
+  );
+
+  const visiblePosts = useMemo(
+    () => posts.filter((post) => !hiddenPostIds.includes(post._id)),
+    [hiddenPostIds, posts],
   );
 
   const updatePost = (postId, updater) => {
@@ -326,6 +344,7 @@ const HomePage = () => {
     setNotificationOpen(false);
     setHighlightedPostId(postId);
     setHighlightedCommentId(commentId || "");
+    if (commentId) setCommentModalPostId(postId);
 
     const hasPost = posts.some((post) => post._id === postId);
     if (!hasPost) {
@@ -370,34 +389,72 @@ const HomePage = () => {
     );
   }
 
-  const renderPostMenu = (post) => ({
-    items: [
-      {
-        key: "follow",
-        icon: <UserAddOutlined />,
-        label: "Theo dõi tác giả",
-        disabled: post.author?._id === user?._id,
+  const handleEditPost = (post) => {
+    let content = post.content || "";
+    Modal.confirm({
+      title: "Chỉnh sửa bài viết",
+      content: (
+        <Input.TextArea
+          autoSize={{ minRows: 3, maxRows: 8 }}
+          defaultValue={content}
+          onChange={(event) => {
+            content = event.target.value;
+          }}
+        />
+      ),
+      okText: "Lưu",
+      cancelText: "Hủy",
+      onOk: async () => {
+        const res = await updatePostApi(post._id, { content });
+        if (res?.EC === 0) {
+          setPosts((prev) => prev.map((item) => (item._id === post._id ? res.data : item)));
+          message.success(res.EM || "Đã cập nhật bài viết");
+        } else {
+          message.error(res?.EM || "Không thể cập nhật bài viết");
+        }
       },
-      {
-        key: "friend",
-        icon: <TeamOutlined />,
-        label: "Gửi lời mời kết bạn",
-        disabled: post.author?._id === user?._id,
-      },
-      {
-        key: "report",
-        icon: <FlagOutlined />,
-        label: "Báo cáo bài viết",
-      },
-      {
-        key: "block",
-        icon: <StopOutlined />,
-        label: "Chặn người dùng",
-        disabled: post.author?._id === user?._id,
-        danger: true,
-      },
-    ],
+    });
+  };
+
+  const renderPostMenu = (post) => {
+    const isMine = post.author?._id === user?._id;
+    return {
+      items: isMine
+        ? [
+            { key: "edit", icon: <EditOutlined />, label: "Chỉnh sửa bài viết" },
+            { key: "delete", icon: <DeleteOutlined />, label: "Xóa bài viết", danger: true },
+          ]
+        : [
+            { key: "hide", icon: <EyeInvisibleOutlined />, label: "Ẩn bài viết" },
+            { key: "follow", icon: <UserAddOutlined />, label: "Theo dõi tác giả" },
+            { key: "friend", icon: <TeamOutlined />, label: "Gửi lời mời kết bạn" },
+            { key: "report", icon: <FlagOutlined />, label: "Báo cáo bài viết" },
+            { key: "block", icon: <StopOutlined />, label: "Chặn người dùng", danger: true },
+          ],
     onClick: async ({ key }) => {
+      if (key === "edit") {
+        handleEditPost(post);
+      }
+      if (key === "delete") {
+        Modal.confirm({
+          title: "Xóa bài viết?",
+          okText: "Xóa",
+          okButtonProps: { danger: true },
+          cancelText: "Hủy",
+          onOk: async () => {
+            const res = await deletePostApi(post._id);
+            if (res?.EC === 0) {
+              setPosts((prev) => prev.filter((item) => item._id !== post._id));
+              message.success(res.EM || "Đã xóa bài viết");
+            } else {
+              message.error(res?.EM || "Không thể xóa bài viết");
+            }
+          },
+        });
+      }
+      if (key === "hide") {
+        setHiddenPostIds((prev) => (prev.includes(post._id) ? prev : [...prev, post._id]));
+      }
       if (key === "follow") {
         await followUserApi(post.author._id);
         message.success("Đã theo dõi");
@@ -409,7 +466,11 @@ const HomePage = () => {
       if (key === "report") {
         askReason("Báo cáo bài viết", async (reason) => {
           const res = await reportPostApi(post._id, reason);
-          message.success(res?.EM || "Đã gửi báo cáo");
+          if (res?.EC === 0) {
+            message.success(res.EM || "Đã gửi báo cáo");
+          } else {
+            message.error(res?.EM || "Không thể gửi báo cáo");
+          }
         });
       }
       if (key === "block") {
@@ -418,7 +479,104 @@ const HomePage = () => {
         await loadFeed({ nextPage: 1 });
       }
     },
-  });
+    };
+  };
+
+  const renderCommentList = (post, { preview = false } = {}) => {
+    const comments = post.comments || [];
+    const visibleComments = preview ? comments.slice(-1) : comments;
+
+    if (preview && !visibleComments.length) return null;
+
+    return (
+      <>
+        <List
+          className={preview ? "comment-list comment-list-preview" : "comment-list"}
+          dataSource={visibleComments}
+          locale={{ emptyText: "Chưa có bình luận" }}
+          renderItem={(comment) => (
+            <List.Item
+              id={`comment-${comment._id}`}
+              className={`comment-item ${
+                highlightedCommentId === comment._id ? "comment-item-highlight" : ""
+              }`}
+            >
+              <div className="comment-thread">
+                <Space
+                  align="start"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => navigate(`/profile/${comment.author?._id}`)}
+                >
+                  <Avatar
+                    size={32}
+                    src={comment.author?.avatar}
+                    icon={<UserOutlined />}
+                  >
+                    {comment.author?.name?.[0] || "U"}
+                  </Avatar>
+                  <div className="comment-bubble">
+                    <Typography.Text strong>{comment.author?.name}</Typography.Text>
+                    <Typography.Paragraph className="mb-0">
+                      {comment.content}
+                    </Typography.Paragraph>
+                  </div>
+                </Space>
+
+                {!preview ? (
+                  <div className="reply-area">
+                    {(comment.replies || []).map((reply) => (
+                      <Space
+                        key={reply._id}
+                        id={`comment-${reply._id}`}
+                        align="start"
+                        className={`reply-row ${
+                          highlightedCommentId === reply._id
+                            ? "comment-item-highlight"
+                            : ""
+                        }`}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => navigate(`/profile/${reply.author?._id}`)}
+                      >
+                        <Avatar
+                          size={26}
+                          src={reply.author?.avatar}
+                          icon={<UserOutlined />}
+                        >
+                          {reply.author?.name?.[0] || "U"}
+                        </Avatar>
+                        <div className="reply-bubble">
+                          <Typography.Text strong>{reply.author?.name}</Typography.Text>
+                          <Typography.Paragraph className="mb-0">
+                            {reply.content}
+                          </Typography.Paragraph>
+                        </div>
+                      </Space>
+                    ))}
+                    <Space.Compact className="reply-input">
+                      <Input
+                        value={replyDrafts[comment._id] || ""}
+                        onChange={(event) =>
+                          setReplyDrafts((prev) => ({
+                            ...prev,
+                            [comment._id]: event.target.value,
+                          }))
+                        }
+                        onPressEnter={() => handleReply(post._id, comment._id)}
+                        placeholder="Trả lời bình luận..."
+                      />
+                      <Button onClick={() => handleReply(post._id, comment._id)}>
+                        Trả lời
+                      </Button>
+                    </Space.Compact>
+                  </div>
+                ) : null}
+              </div>
+            </List.Item>
+          )}
+        />
+      </>
+    );
+  };
 
   return (
     <div className="social-page">
@@ -554,8 +712,8 @@ const HomePage = () => {
         </div>
 
         <Space direction="vertical" style={{ width: "100%" }} size={16}>
-          {posts.length ? (
-            posts.map((post) => (
+          {visiblePosts.length ? (
+            visiblePosts.map((post) => (
               <Card
                 key={post._id}
                 id={`post-${post._id}`}
@@ -668,7 +826,11 @@ const HomePage = () => {
                   >
                     Like
                   </Button>
-                  <Button type="text" icon={<CommentOutlined />}>
+                  <Button
+                    type="text"
+                    icon={<CommentOutlined />}
+                    onClick={() => setCommentModalPostId(post._id)}
+                  >
                     Bình luận
                   </Button>
                   <Button
@@ -700,102 +862,7 @@ const HomePage = () => {
                   </Space.Compact>
                 </div>
 
-                <List
-                  className="comment-list"
-                  dataSource={post.comments || []}
-                  locale={{ emptyText: "Chưa có bình luận" }}
-                  renderItem={(comment) => (
-                    <List.Item
-                      id={`comment-${comment._id}`}
-                      className={`comment-item ${
-                        highlightedCommentId === comment._id
-                          ? "comment-item-highlight"
-                          : ""
-                      }`}
-                    >
-                      <div className="comment-thread">
-                        <Space
-                          align="start"
-                          style={{ cursor: "pointer" }}
-                          onClick={() =>
-                            navigate(`/profile/${comment.author?._id}`)
-                          }
-                        >
-                          <Avatar
-                            size={32}
-                            src={comment.author?.avatar}
-                            icon={<UserOutlined />}
-                          >
-                            {comment.author?.name?.[0] || "U"}
-                          </Avatar>
-                          <div className="comment-bubble">
-                            <Typography.Text strong>
-                              {comment.author?.name}
-                            </Typography.Text>
-                            <Typography.Paragraph className="mb-0">
-                              {comment.content}
-                            </Typography.Paragraph>
-                          </div>
-                        </Space>
-
-                        <div className="reply-area">
-                          {(comment.replies || []).map((reply) => (
-                            <Space
-                              key={reply._id}
-                              id={`comment-${reply._id}`}
-                              align="start"
-                              className={`reply-row ${
-                                highlightedCommentId === reply._id
-                                  ? "comment-item-highlight"
-                                  : ""
-                              }`}
-                              style={{ cursor: "pointer" }}
-                              onClick={() =>
-                                navigate(`/profile/${reply.author?._id}`)
-                              }
-                            >
-                              <Avatar
-                                size={26}
-                                src={reply.author?.avatar}
-                                icon={<UserOutlined />}
-                              >
-                                {reply.author?.name?.[0] || "U"}
-                              </Avatar>
-                              <div className="reply-bubble">
-                                <Typography.Text strong>
-                                  {reply.author?.name}
-                                </Typography.Text>
-                                <Typography.Paragraph className="mb-0">
-                                  {reply.content}
-                                </Typography.Paragraph>
-                              </div>
-                            </Space>
-                          ))}
-                          <Space.Compact className="reply-input">
-                            <Input
-                              value={replyDrafts[comment._id] || ""}
-                              onChange={(event) =>
-                                setReplyDrafts((prev) => ({
-                                  ...prev,
-                                  [comment._id]: event.target.value,
-                                }))
-                              }
-                              onPressEnter={() =>
-                                handleReply(post._id, comment._id)
-                              }
-                              placeholder="Trả lời bình luận..."
-                            />
-                            <Button
-                              onClick={() => handleReply(post._id, comment._id)}
-                            >
-                              Trả lời
-                            </Button>
-                          </Space.Compact>
-                        </div>
-                      </div>
-                    </List.Item>
-                  )}
-                />
+                {renderCommentList(post, { preview: true })}
               </Card>
             ))
           ) : (
@@ -832,6 +899,41 @@ const HomePage = () => {
           </Space>
         </Card>
       </aside>
+
+      <PostCommentsModal
+        open={Boolean(activeCommentPost)}
+        post={activeCommentPost}
+        onClose={() => setCommentModalPostId("")}
+        currentUser={{ ...user, name: displayName, avatar: userProfile?.avatar || user?.avatar }}
+        commentValue={activeCommentPost ? commentDrafts[activeCommentPost._id] || "" : ""}
+        onCommentChange={(value) =>
+          activeCommentPost &&
+          setCommentDrafts((prev) => ({
+            ...prev,
+            [activeCommentPost._id]: value,
+          }))
+        }
+        onSubmitComment={handleComment}
+        replyDrafts={replyDrafts}
+        onReplyChange={(commentId, value) =>
+          setReplyDrafts((prev) => ({ ...prev, [commentId]: value }))
+        }
+        onSubmitReply={handleReply}
+        onAuthorClick={(authorId) => authorId && navigate(`/profile/${authorId}`)}
+        onReact={(post) => handleReact(post._id, "like")}
+        onShare={(post) => handleShare(post._id)}
+        onReportComment={(post, comment) =>
+          askReason("Báo cáo bình luận", async (reason) => {
+            const res = await reportCommentApi(comment._id, reason);
+            if (res?.EC === 0) {
+              message.success(res.EM || "Đã gửi báo cáo");
+            } else {
+              message.error(res?.EM || "Không thể gửi báo cáo");
+            }
+          })
+        }
+        highlightedCommentId={highlightedCommentId}
+      />
 
       <Drawer
         title="Thông báo"

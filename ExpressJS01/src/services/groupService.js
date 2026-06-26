@@ -1,6 +1,8 @@
 const Group = require("../models/group");
 const GroupEvent = require("../models/groupEvent");
+const Comment = require("../models/comment");
 const Post = require("../models/post");
+const Report = require("../models/report");
 const { processPostMediaFiles } = require("./mediaService");
 const { decoratePosts } = require("./socialService");
 
@@ -26,30 +28,95 @@ const isGroupModerator = (group, userId) =>
 const canModerate = (group, userId) =>
   isGroupAdmin(group, userId) || isGroupModerator(group, userId);
 
-const decorateGroup = async (group, userId) => {
-  const groupObject = group.toObject ? group.toObject() : group;
-  const [postCount, eventCount] = await Promise.all([
-    Post.countDocuments({ group: group._id }),
-    GroupEvent.countDocuments({ group: group._id }),
-  ]);
+const publishedPostFilter = {
+  $or: [{ approvalStatus: "published" }, { approvalStatus: { $exists: false } }],
+};
+
+const getJoinRequestStatus = (group, userId) => {
+  const myRequests =
+    group.joinRequests?.filter((request) => isSameId(request.user, userId)) || [];
+  const pendingRequest = myRequests.find((request) => request.status === "pending");
+  if (pendingRequest) return "pending";
+
+  return (
+    myRequests
+      .sort((a, b) => new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0))[0]
+      ?.status || null
+  );
+};
+
+const normalizeMediaItem = (item, postId, createdAt, author) => {
+  if (!item) return null;
+  if (typeof item === "string") {
+    return {
+      url: item,
+      type: /\.(mp4|mov|avi|mkv|webm)$/i.test(item) ? "video" : "image",
+      postId,
+      createdAt,
+      author,
+    };
+  }
 
   return {
-    ...groupObject,
+    ...item,
+    postId,
+    createdAt,
+    author,
+    type: item.type || (item.mimeType?.startsWith("video/") ? "video" : "image"),
+  };
+};
+
+const decorateGroup = async (group, userId) => {
+  const groupObject = group.toObject ? group.toObject() : group;
+  const isMember = isGroupMember(group, userId);
+  const isAdmin = isGroupAdmin(group, userId);
+  const isModerator = isGroupModerator(group, userId);
+  const canSeeMembership = group.privacy !== "private" || isMember;
+  const canSeeRequests = isAdmin || isModerator;
+  const [postCount, eventCount, pendingPostCount, openReportCount] = await Promise.all([
+    Post.countDocuments({ group: group._id, ...publishedPostFilter }),
+    GroupEvent.countDocuments({ group: group._id }),
+    Post.countDocuments({ group: group._id, approvalStatus: "pending" }),
+    Post.find({ group: group._id }).distinct("_id").then((postIds) =>
+      Report.countDocuments({
+        targetType: "post",
+        targetId: { $in: postIds },
+        status: { $in: ["open", "reviewing"] },
+      }),
+    ),
+  ]);
+  const {
+    joinRequests,
+    members,
+    admins,
+    moderators,
+    ...safeGroupObject
+  } = groupObject;
+
+  return {
+    ...safeGroupObject,
+    members: canSeeMembership ? members || [] : [],
+    admins: canSeeMembership ? admins || [] : [],
+    moderators: canSeeMembership ? moderators || [] : [],
+    joinRequests: canSeeRequests ? joinRequests || [] : [],
     memberCount: group.members?.length || 0,
     pendingRequestCount:
-      group.joinRequests?.filter((request) => request.status === "pending").length || 0,
-    myJoinRequestStatus:
-      group.joinRequests?.find((request) => isSameId(request.user, userId))?.status || null,
+      canSeeRequests
+        ? group.joinRequests?.filter((request) => request.status === "pending").length || 0
+        : 0,
+    myJoinRequestStatus: getJoinRequestStatus(group, userId),
     postCount,
     eventCount,
-    myRole: isGroupAdmin(group, userId)
+    pendingPostCount: canSeeRequests ? pendingPostCount : 0,
+    openReportCount: canSeeRequests ? openReportCount : 0,
+    myRole: isAdmin
       ? "admin"
-      : isGroupModerator(group, userId)
+      : isModerator
         ? "moderator"
-        : isGroupMember(group, userId)
+        : isMember
           ? "member"
           : "guest",
-    isMember: isGroupMember(group, userId),
+    isMember,
   };
 };
 
@@ -76,11 +143,19 @@ const listGroups = async (userId, query = {}) => {
 const createGroup = async (userId, payload) => {
   const name = payload.name?.trim();
   if (!name) return { EC: 1, EM: "Ten nhom khong duoc de trong" };
+  const privacy = payload.privacy || "public";
+  if (!["public", "private"].includes(privacy)) {
+    return { EC: 2, EM: "Che do nhom khong hop le" };
+  }
 
   const group = await Group.create({
     name,
     description: payload.description?.trim() || "",
-    privacy: payload.privacy || "public",
+    privacy,
+    postApprovalEnabled: Boolean(payload.postApprovalEnabled),
+    defaultPostVisibility: ["public", "group"].includes(payload.defaultPostVisibility)
+      ? payload.defaultPostVisibility
+      : "group",
     avatar: payload.avatar || "",
     coverPhoto: payload.coverPhoto || "",
     createdBy: userId,
@@ -101,16 +176,33 @@ const updateGroup = async (userId, groupId, payload) => {
   if (!group) return { EC: 1, EM: "Khong tim thay nhom" };
   if (!isGroupAdmin(group, userId)) return { EC: 2, EM: "Chi admin moi duoc cap nhat nhom" };
 
-  const allowedFields = ["name", "description", "privacy", "avatar", "coverPhoto"];
+  const allowedFields = [
+    "name",
+    "description",
+    "privacy",
+    "avatar",
+    "coverPhoto",
+    "postApprovalEnabled",
+    "defaultPostVisibility",
+  ];
   allowedFields.forEach((field) => {
     if (payload[field] !== undefined) {
-      group[field] = typeof payload[field] === "string" ? payload[field].trim() : payload[field];
+      group[field] =
+        typeof payload[field] === "string" && field !== "defaultPostVisibility"
+          ? payload[field].trim()
+          : payload[field];
     }
   });
 
   if (!group.name) return { EC: 3, EM: "Ten nhom khong duoc de trong" };
   if (!["public", "private"].includes(group.privacy)) {
     return { EC: 4, EM: "Che do nhom khong hop le" };
+  }
+  if (group.privacy === "private") {
+    group.defaultPostVisibility = "group";
+  }
+  if (!["public", "group"].includes(group.defaultPostVisibility)) {
+    return { EC: 5, EM: "Che do hien thi bai viet khong hop le" };
   }
 
   await group.save();
@@ -271,19 +363,59 @@ const updateMemberRole = async (userId, groupId, memberId, role) => {
 const getGroupPosts = async (userId, groupId, query = {}) => {
   const group = await Group.findById(groupId);
   if (!group) return { EC: 1, EM: "Khong tim thay nhom" };
-  if (group.privacy === "private" && !isGroupMember(group, userId)) {
+  const member = isGroupMember(group, userId);
+  if (group.privacy === "private" && !member) {
     return { EC: 2, EM: "Ban can tham gia nhom de xem bai viet" };
   }
 
   const page = Math.max(Number(query.page || 1), 1);
   const limit = Math.min(Math.max(Number(query.limit || 10), 1), 30);
-  const posts = await Post.find({ group: groupId })
+  const postFilter = { group: groupId, ...publishedPostFilter };
+  if (!member) postFilter.visibility = "public";
+
+  const posts = await Post.find(postFilter)
     .sort({ createdAt: -1 })
     .skip((page - 1) * limit)
     .limit(limit)
     .populate("author", "name avatar email");
 
   const data = await decoratePosts(posts, userId);
+
+  return {
+    EC: 0,
+    data,
+    pagination: { page, limit, hasMore: posts.length === limit },
+  };
+};
+
+const getGroupMedia = async (userId, groupId, query = {}) => {
+  const group = await Group.findById(groupId);
+  if (!group) return { EC: 1, EM: "Khong tim thay nhom" };
+  const member = isGroupMember(group, userId);
+  if (group.privacy === "private" && !member) {
+    return { EC: 2, EM: "Ban can tham gia nhom de xem media" };
+  }
+
+  const page = Math.max(Number(query.page || 1), 1);
+  const limit = Math.min(Math.max(Number(query.limit || 24), 1), 60);
+  const mediaFilter = {
+    group: groupId,
+    media: { $exists: true, $ne: [] },
+    ...publishedPostFilter,
+  };
+  if (!member) mediaFilter.visibility = "public";
+  const posts = await Post.find(mediaFilter)
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .select("author media createdAt")
+    .populate("author", "name avatar email");
+
+  const data = posts.flatMap((post) =>
+    post.media
+      .map((item) => normalizeMediaItem(item, post._id, post.createdAt, post.author))
+      .filter(Boolean),
+  );
 
   return {
     EC: 0,
@@ -299,13 +431,19 @@ const createGroupPost = async (userId, groupId, payload, files = []) => {
 
   const content = payload.content?.trim() || (files.length ? "" : "");
   if (!content && !files.length) return { EC: 3, EM: "Bai viet can co noi dung hoac media" };
+  const visibility = ["public", "group"].includes(payload.visibility)
+    ? payload.visibility
+    : group.defaultPostVisibility || "group";
+  const approvalStatus =
+    group.postApprovalEnabled && !canModerate(group, userId) ? "pending" : "published";
 
   const media = await processPostMediaFiles(files, userId);
   const post = await Post.create({
     author: userId,
     group: groupId,
     content,
-    visibility: "public",
+    visibility: group.privacy === "private" ? "group" : visibility,
+    approvalStatus,
     hashtags: extractHashtags(content),
     media,
   });
@@ -314,7 +452,139 @@ const createGroupPost = async (userId, groupId, payload, files = []) => {
   await group.save();
 
   const data = await Post.findById(post._id).populate("author", "name avatar email");
-  return { EC: 0, EM: "Da dang bai trong nhom", data };
+  return {
+    EC: 0,
+    EM:
+      approvalStatus === "pending"
+        ? "Bai viet dang cho quan tri vien phe duyet"
+        : "Da dang bai trong nhom",
+    data,
+  };
+};
+
+const listPendingPosts = async (userId, groupId) => {
+  const group = await Group.findById(groupId);
+  if (!group) return { EC: 1, EM: "Khong tim thay nhom" };
+  if (!canModerate(group, userId)) {
+    return { EC: 2, EM: "Chi admin/mod moi xem duoc bai cho duyet" };
+  }
+
+  const posts = await Post.find({ group: groupId, approvalStatus: "pending" })
+    .sort({ createdAt: -1 })
+    .populate("author", "name avatar email");
+  const data = await decoratePosts(posts, userId);
+  return { EC: 0, data };
+};
+
+const reviewPendingPost = async (userId, groupId, postId, action) => {
+  const group = await Group.findById(groupId);
+  if (!group) return { EC: 1, EM: "Khong tim thay nhom" };
+  if (!canModerate(group, userId)) {
+    return { EC: 2, EM: "Chi admin/mod moi duoc duyet bai" };
+  }
+  if (!["approve", "reject"].includes(action)) {
+    return { EC: 3, EM: "Hanh dong khong hop le" };
+  }
+
+  const post = await Post.findOne({ _id: postId, group: groupId, approvalStatus: "pending" });
+  if (!post) return { EC: 4, EM: "Khong tim thay bai dang cho duyet" };
+
+  post.approvalStatus = action === "approve" ? "published" : "rejected";
+  post.reviewedBy = userId;
+  post.reviewedAt = new Date();
+  await post.save();
+
+  return { EC: 0, EM: action === "approve" ? "Da phe duyet bai viet" : "Da tu choi bai viet" };
+};
+
+const listGroupReports = async (userId, groupId) => {
+  const group = await Group.findById(groupId);
+  if (!group) return { EC: 1, EM: "Khong tim thay nhom" };
+  if (!canModerate(group, userId)) {
+    return { EC: 2, EM: "Chi admin/mod moi xem duoc to cao" };
+  }
+
+  const postIds = await Post.find({ group: groupId }).distinct("_id");
+  const commentIds = await Comment.find({ post: { $in: postIds }, deletedAt: null }).distinct("_id");
+  const reports = await Report.find({
+    $or: [
+      { targetType: "post", targetId: { $in: postIds } },
+      { targetType: "comment", targetId: { $in: commentIds } },
+    ],
+    status: { $in: ["open", "reviewing"] },
+  })
+    .sort({ createdAt: -1 })
+    .populate("reporter", "name avatar email")
+    .populate("resolvedBy", "name avatar email")
+    .lean();
+  const reportPostIds = reports
+    .filter((report) => report.targetType === "post")
+    .map((report) => report.targetId);
+  const reportedComments = await Comment.find({
+    _id: {
+      $in: reports
+        .filter((report) => report.targetType === "comment")
+        .map((report) => report.targetId),
+    },
+  })
+    .populate("author", "name avatar email")
+    .lean();
+  const commentMap = reportedComments.reduce((acc, comment) => {
+    acc[String(comment._id)] = comment;
+    return acc;
+  }, {});
+  const commentPostIds = reportedComments.map((comment) => comment.post);
+  const posts = await Post.find({ _id: { $in: [...reportPostIds, ...commentPostIds] } })
+    .populate("author", "name avatar email")
+    .lean();
+  const postMap = posts.reduce((acc, post) => {
+    acc[String(post._id)] = post;
+    return acc;
+  }, {});
+
+  return {
+    EC: 0,
+    data: reports.map((report) => ({
+      ...report,
+      targetComment:
+        report.targetType === "comment" ? commentMap[String(report.targetId)] || null : null,
+      targetPost:
+        report.targetType === "comment"
+          ? postMap[String(commentMap[String(report.targetId)]?.post)] || null
+          : postMap[String(report.targetId)] || null,
+    })),
+  };
+};
+
+const resolveGroupReport = async (userId, groupId, reportId, action) => {
+  const group = await Group.findById(groupId);
+  if (!group) return { EC: 1, EM: "Khong tim thay nhom" };
+  if (!canModerate(group, userId)) {
+    return { EC: 2, EM: "Chi admin/mod moi xu ly to cao" };
+  }
+  if (!["reviewing", "resolved", "rejected"].includes(action)) {
+    return { EC: 3, EM: "Trang thai xu ly khong hop le" };
+  }
+
+  const postIds = await Post.find({ group: groupId }).distinct("_id");
+  const commentIds = await Comment.find({ post: { $in: postIds } }).distinct("_id");
+  const report = await Report.findOne({
+    _id: reportId,
+    $or: [
+      { targetType: "post", targetId: { $in: postIds } },
+      { targetType: "comment", targetId: { $in: commentIds } },
+    ],
+  });
+  if (!report) return { EC: 4, EM: "Khong tim thay to cao trong nhom" };
+
+  report.status = action;
+  if (["resolved", "rejected"].includes(action)) {
+    report.resolvedBy = userId;
+    report.resolvedAt = new Date();
+  }
+  await report.save();
+
+  return { EC: 0, EM: "Da cap nhat to cao", data: report };
 };
 
 const listEvents = async (userId, groupId) => {
@@ -350,16 +620,24 @@ const createEvent = async (userId, groupId, payload) => {
 
   const title = payload.title?.trim();
   if (!title) return { EC: 3, EM: "Ten su kien khong duoc de trong" };
-  if (!payload.startAt || Number.isNaN(new Date(payload.startAt).getTime())) {
+  const startAt = new Date(payload.startAt);
+  const endAt = payload.endAt ? new Date(payload.endAt) : null;
+  if (!payload.startAt || Number.isNaN(startAt.getTime())) {
     return { EC: 4, EM: "Thoi gian bat dau khong hop le" };
+  }
+  if (endAt && Number.isNaN(endAt.getTime())) {
+    return { EC: 5, EM: "Thoi gian ket thuc khong hop le" };
+  }
+  if (endAt && endAt <= startAt) {
+    return { EC: 6, EM: "Thoi gian ket thuc phai sau thoi gian bat dau" };
   }
 
   const data = await GroupEvent.create({
     group: groupId,
     title,
     description: payload.description?.trim() || "",
-    startAt: new Date(payload.startAt),
-    endAt: payload.endAt ? new Date(payload.endAt) : null,
+    startAt,
+    endAt,
     location: payload.location?.trim() || "",
     createdBy: userId,
     attendees: [userId],
@@ -387,8 +665,14 @@ const attendEvent = async (userId, groupId, eventId) => {
 };
 
 const leaveEvent = async (userId, groupId, eventId) => {
+  const group = await Group.findById(groupId);
+  if (!group) return { EC: 1, EM: "Khong tim thay nhom" };
+  if (!isGroupMember(group, userId)) {
+    return { EC: 2, EM: "Ban can tham gia nhom de huy tham gia su kien" };
+  }
+
   const event = await GroupEvent.findOne({ _id: eventId, group: groupId });
-  if (!event) return { EC: 1, EM: "Khong tim thay su kien" };
+  if (!event) return { EC: 3, EM: "Khong tim thay su kien" };
 
   event.attendees = event.attendees.filter((attendeeId) => !isSameId(attendeeId, userId));
   await event.save();
@@ -402,6 +686,7 @@ module.exports = {
   createGroup,
   createGroupPost,
   getGroupById,
+  getGroupMedia,
   getGroupPosts,
   joinGroup,
   leaveGroup,
@@ -409,7 +694,11 @@ module.exports = {
   listJoinRequests,
   listEvents,
   listGroups,
+  listGroupReports,
+  listPendingPosts,
   removeMember,
+  resolveGroupReport,
+  reviewPendingPost,
   respondJoinRequest,
   updateGroup,
   updateGroupImage,

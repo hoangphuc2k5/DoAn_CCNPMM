@@ -165,9 +165,19 @@ const SearchPage = () => {
         dataSource={data}
         renderItem={(item) => (
           <List.Item
+            style={{ cursor: "pointer" }}
+            onClick={() => navigate(`/groups/${item._id}`)}
             actions={[
-              <Button key="join" type="primary" size="small">
-                Tham gia
+              <Button
+                key="join"
+                type="primary"
+                size="small"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  navigate(`/groups/${item._id}`);
+                }}
+              >
+                Vào nhóm
               </Button>,
             ]}
           >

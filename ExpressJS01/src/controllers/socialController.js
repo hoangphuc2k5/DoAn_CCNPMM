@@ -65,6 +65,15 @@ const deletePost = async (req, res) => {
   return res.status(200).json(data);
 };
 
+const updatePost = async (req, res) => {
+  const data = await socialService.updatePost(
+    currentUserId(req),
+    req.params.postId,
+    req.body,
+  );
+  return res.status(200).json(data);
+};
+
 const sharePost = async (req, res) => {
   const data = await socialService.sharePost(
     currentUserId(req),
@@ -116,6 +125,16 @@ const reportPost = async (req, res) => {
     reporter: currentUserId(req),
     targetType: "post",
     targetId: req.params.postId,
+    reason: req.body.reason,
+  });
+  return res.status(200).json(data);
+};
+
+const reportComment = async (req, res) => {
+  const data = await socialService.reportTarget({
+    reporter: currentUserId(req),
+    targetType: "comment",
+    targetId: req.params.commentId,
     reason: req.body.reason,
   });
   return res.status(200).json(data);
@@ -179,6 +198,7 @@ module.exports = {
   markNotificationRead,
   reactPost,
   replyComment,
+  reportComment,
   reportPost,
   reportUser,
   respondFriendRequest,
@@ -186,4 +206,5 @@ module.exports = {
   sharePost,
   unblockUser,
   unfollowUser,
+  updatePost,
 };

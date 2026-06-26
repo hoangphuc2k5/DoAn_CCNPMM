@@ -21,6 +21,15 @@ const groupSchema = new mongoose.Schema(
       enum: ["public", "private"],
       default: "public",
     },
+    postApprovalEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    defaultPostVisibility: {
+      type: String,
+      enum: ["public", "group"],
+      default: "group",
+    },
     members: [
       {
         type: mongoose.Schema.Types.ObjectId,

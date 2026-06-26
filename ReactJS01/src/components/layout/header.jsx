@@ -66,7 +66,7 @@ const Header = () => {
             label: (
               <div
                 style={{ display: "flex", alignItems: "center", gap: 8 }}
-                onClick={() => navigate(`/groups`)}
+                onClick={() => navigate(`/groups/${g._id}`)}
               >
                 <Avatar
                   size="small"

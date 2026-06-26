@@ -3,6 +3,7 @@ const path = require("path");
 const sharp = require("sharp");
 
 const mediaRoot = path.join(process.cwd(), "uploads", "media");
+const uploadsRoot = path.resolve(process.cwd(), "uploads");
 const imageDir = path.join(mediaRoot, "images");
 const videoDir = path.join(mediaRoot, "videos");
 
@@ -22,6 +23,34 @@ const removeFile = async (filePath) => {
       console.log("Cannot remove temp media file:", error.message);
     }
   }
+};
+
+const getLocalUploadPath = (mediaItem) => {
+  const storageKey = mediaItem?.storageKey;
+  const url = typeof mediaItem === "string" ? mediaItem : mediaItem?.url;
+  const relativePath = storageKey || url?.replace(/^https?:\/\/[^/]+\/uploads\//, "");
+
+  if (!relativePath) return null;
+
+  const normalized = relativePath
+    .replace(/^\/?uploads\//, "")
+    .replace(/^\/+/, "")
+    .replace(/\\/g, "/");
+  const absolutePath = path.resolve(uploadsRoot, normalized);
+  const relativeToUploads = path.relative(uploadsRoot, absolutePath);
+
+  return relativeToUploads && !relativeToUploads.startsWith("..") && !path.isAbsolute(relativeToUploads)
+    ? absolutePath
+    : null;
+};
+
+const removeStoredMediaFiles = async (media = []) => {
+  await Promise.all(
+    media
+      .map(getLocalUploadPath)
+      .filter(Boolean)
+      .map((filePath) => removeFile(filePath)),
+  );
 };
 
 const buildPublicUrl = (relativeUrl) => {
@@ -116,4 +145,5 @@ const processPostMediaFiles = async (files = [], userId) => {
 
 module.exports = {
   processPostMediaFiles,
+  removeStoredMediaFiles,
 };

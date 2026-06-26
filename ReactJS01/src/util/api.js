@@ -18,6 +18,8 @@ const getFeedApi = ({ mode = "latest", page = 1, limit = 10 }) =>
 
 const getPostByIdApi = (postId) => axios.get(`/v1/api/posts/${postId}`);
 
+const updatePostApi = (postId, payload) => axios.patch(`/v1/api/posts/${postId}`, payload);
+
 const deletePostApi = (postId) => axios.delete(`/v1/api/posts/${postId}`);
 
 const reactPostApi = (postId, type) => axios.post(`/v1/api/posts/${postId}/react`, { type });
@@ -33,6 +35,9 @@ const deleteCommentApi = (commentId) => axios.delete(`/v1/api/comments/${comment
 const sharePostApi = (postId, content) => axios.post(`/v1/api/posts/${postId}/share`, { content });
 
 const reportPostApi = (postId, reason) => axios.post(`/v1/api/posts/${postId}/report`, { reason });
+
+const reportCommentApi = (commentId, reason) =>
+  axios.post(`/v1/api/comments/${commentId}/report`, { reason });
 
 const followUserApi = (userId) => axios.post(`/v1/api/users/${userId}/follow`);
 
@@ -109,8 +114,22 @@ const updateGroupMemberRoleApi = (groupId, memberId, role) =>
 const getGroupPostsApi = (groupId, params) =>
   axios.get(`/v1/api/groups/${groupId}/posts`, { params });
 
+const getGroupMediaApi = (groupId, params) =>
+  axios.get(`/v1/api/groups/${groupId}/media`, { params });
+
+const getGroupPendingPostsApi = (groupId) =>
+  axios.get(`/v1/api/groups/${groupId}/posts/pending`);
+
+const reviewGroupPostApi = (groupId, postId, action) =>
+  axios.patch(`/v1/api/groups/${groupId}/posts/${postId}/review`, { action });
+
 const createGroupPostApi = (groupId, payload) =>
   axios.post(`/v1/api/groups/${groupId}/posts`, payload);
+
+const getGroupReportsApi = (groupId) => axios.get(`/v1/api/groups/${groupId}/reports`);
+
+const resolveGroupReportApi = (groupId, reportId, action) =>
+  axios.patch(`/v1/api/groups/${groupId}/reports/${reportId}`, { action });
 
 const getGroupEventsApi = (groupId) => axios.get(`/v1/api/groups/${groupId}/events`);
 
@@ -137,7 +156,10 @@ export {
   getFeedApi,
   getGroupApi,
   getGroupEventsApi,
+  getGroupMediaApi,
+  getGroupPendingPostsApi,
   getGroupPostsApi,
+  getGroupReportsApi,
   getGroupsApi,
   getNotificationsApi,
   getPostByIdApi,
@@ -157,15 +179,19 @@ export {
   markNotificationReadApi,
   reactPostApi,
   replyCommentApi,
+  reportCommentApi,
   reportPostApi,
   reportUserApi,
   removeGroupMemberApi,
+  resolveGroupReportApi,
+  reviewGroupPostApi,
   respondGroupJoinRequestApi,
   respondFriendRequestApi,
   searchApi,
   sharePostApi,
   updateGroupApi,
   updateGroupMemberRoleApi,
+  updatePostApi,
   uploadGroupAvatarApi,
   uploadGroupCoverApi,
   unblockUserApi,

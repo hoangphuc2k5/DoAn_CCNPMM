@@ -9,7 +9,7 @@ const Reaction = require("../models/reaction");
 const Report = require("../models/report");
 const Group = require("../models/group");
 const User = require("../models/user");
-const { processPostMediaFiles } = require("./mediaService");
+const { processPostMediaFiles, removeStoredMediaFiles } = require("./mediaService");
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
 const idOf = (value) => String(value?._id || value);
@@ -72,6 +72,21 @@ const canInteractWithPost = async (post, userId) => {
   const group = await getPostGroup(post);
   if (!group) return { allowed: true, group: null };
   return { allowed: isGroupMember(group, userId), group };
+};
+
+const canViewPost = async (post, userId) => {
+  const group = await getPostGroup(post);
+  if (!group) return { allowed: true, group: null };
+  if (group.privacy === "private" && !isGroupMember(group, userId)) {
+    return { allowed: false, group };
+  }
+  if (post.visibility === "group" && !isGroupMember(group, userId)) {
+    return { allowed: false, group };
+  }
+  if (post.approvalStatus && post.approvalStatus !== "published") {
+    return { allowed: false, group };
+  }
+  return { allowed: true, group };
 };
 
 const createNotification = async ({ recipient, actor, type, post, comment, metadata = {} }) => {
@@ -205,6 +220,7 @@ const getFeed = async (userId, query) => {
 
   const filter = {
     author: { $nin: blockedUserIds.map(toObjectId) },
+    group: null,
     $or: [{ visibility: "public" }, { author: userId }],
   };
 
@@ -270,6 +286,11 @@ const getPostById = async (userId, postId) => {
 
   if (!post) {
     return { EC: 1, EM: "Không tìm thấy bài viết" };
+  }
+
+  const access = await canViewPost(post, userId);
+  if (!access.allowed) {
+    return { EC: 2, EM: "Ban can tham gia nhom de xem bai viet" };
   }
 
   const [data] = await decoratePosts([post], userId);
@@ -411,9 +432,47 @@ const deletePost = async (userId, postId) => {
     Comment.updateMany({ post: postId, deletedAt: null }, { deletedAt: new Date() }),
     Reaction.deleteMany({ post: postId }),
     Post.deleteOne({ _id: postId }),
+    removeStoredMediaFiles(post.media),
   ]);
 
   return { EC: 0, EM: "Da xoa bai viet" };
+};
+
+const updatePost = async (userId, postId, payload = {}) => {
+  const post = await Post.findById(postId);
+  if (!post) return { EC: 1, EM: "Khong tim thay bai viet" };
+  if (!isSameId(post.author, userId)) return { EC: 2, EM: "Chi tac gia moi duoc chinh sua bai viet" };
+
+  const content = payload.content?.trim() || "";
+  if (!content && !post.media?.length) {
+    return { EC: 3, EM: "Bai viet can co noi dung hoac tep dinh kem" };
+  }
+
+  const update = {
+    content,
+    hashtags: extractHashtags(content),
+  };
+
+  if (payload.visibility && ["public", "group"].includes(payload.visibility)) {
+    const group = await getPostGroup(post);
+    if (group?.privacy === "private" && payload.visibility === "public") {
+      return { EC: 4, EM: "Nhom rieng tu khong the dat bai cong khai" };
+    }
+    update.visibility = payload.visibility;
+  }
+
+  const mentionedUsers = await findMentionedUsers(content);
+  update.mentions = mentionedUsers.map((user) => user._id);
+
+  await Post.findByIdAndUpdate(postId, update);
+  const updatedPost = await Post.findById(postId)
+    .populate("author", "name email avatar")
+    .populate({
+      path: "sharedPost",
+      populate: { path: "author", select: "name email avatar" },
+    });
+  const [data] = await decoratePosts([updatedPost], userId);
+  return { EC: 0, EM: "Da cap nhat bai viet", data };
 };
 
 const sharePost = async (userId, postId, content = "") => {
@@ -425,6 +484,9 @@ const sharePost = async (userId, postId, content = "") => {
   if (!access.allowed) return { EC: 3, EM: "Ban can la thanh vien nhom de chia se" };
   if (access.group?.privacy === "private") {
     return { EC: 4, EM: "Khong the chia se bai viet trong nhom rieng tu" };
+  }
+  if (sourcePost.visibility === "group") {
+    return { EC: 5, EM: "Khong the chia se bai viet chi hien thi trong nhom" };
   }
 
   const sharedContent = content?.trim() || "Đã chia sẻ một bài viết";
@@ -551,6 +613,26 @@ const unblockUser = async (userId, targetUserId) => {
 
 const reportTarget = async ({ reporter, targetType, targetId, reason }) => {
   if (!reason?.trim()) return { EC: 1, EM: "Vui lòng nhập lý do báo cáo" };
+  if (targetType === "user" && isSameId(reporter, targetId)) {
+    return { EC: 2, EM: "Khong the tu to cao chinh minh" };
+  }
+
+  if (targetType === "post") {
+    const post = await Post.findById(targetId).select("author");
+    if (!post) return { EC: 3, EM: "Khong tim thay bai viet" };
+    if (isSameId(post.author, reporter)) {
+      return { EC: 4, EM: "Khong the tu to cao bai viet cua minh" };
+    }
+  }
+
+  if (targetType === "comment") {
+    const comment = await Comment.findById(targetId).select("author deletedAt");
+    if (!comment || comment.deletedAt) return { EC: 5, EM: "Khong tim thay binh luan" };
+    if (isSameId(comment.author, reporter)) {
+      return { EC: 6, EM: "Khong the tu to cao binh luan cua minh" };
+    }
+  }
+
   const report = await Report.create({
     reporter,
     targetType,
@@ -693,4 +775,5 @@ module.exports = {
   sharePost,
   unblockUser,
   unfollowUser,
+  updatePost,
 };

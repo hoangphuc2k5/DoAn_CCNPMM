@@ -109,12 +109,51 @@ const getGroupPosts = async (req, res) => {
   return res.status(data.EC === 0 ? 200 : 400).json(data);
 };
 
+const getGroupMedia = async (req, res) => {
+  const data = await groupService.getGroupMedia(
+    currentUserId(req),
+    req.params.groupId,
+    req.query,
+  );
+  return res.status(data.EC === 0 ? 200 : 400).json(data);
+};
+
 const createGroupPost = async (req, res) => {
   const data = await groupService.createGroupPost(
     currentUserId(req),
     req.params.groupId,
     req.body,
     req.files || [],
+  );
+  return res.status(data.EC === 0 ? 200 : 400).json(data);
+};
+
+const listPendingPosts = async (req, res) => {
+  const data = await groupService.listPendingPosts(currentUserId(req), req.params.groupId);
+  return res.status(data.EC === 0 ? 200 : 400).json(data);
+};
+
+const reviewPendingPost = async (req, res) => {
+  const data = await groupService.reviewPendingPost(
+    currentUserId(req),
+    req.params.groupId,
+    req.params.postId,
+    req.body.action,
+  );
+  return res.status(data.EC === 0 ? 200 : 400).json(data);
+};
+
+const listGroupReports = async (req, res) => {
+  const data = await groupService.listGroupReports(currentUserId(req), req.params.groupId);
+  return res.status(data.EC === 0 ? 200 : 400).json(data);
+};
+
+const resolveGroupReport = async (req, res) => {
+  const data = await groupService.resolveGroupReport(
+    currentUserId(req),
+    req.params.groupId,
+    req.params.reportId,
+    req.body.action,
   );
   return res.status(data.EC === 0 ? 200 : 400).json(data);
 };
@@ -157,14 +196,19 @@ module.exports = {
   createGroup,
   createGroupPost,
   getGroupById,
+  getGroupMedia,
   getGroupPosts,
   joinGroup,
   leaveGroup,
   leaveEvent,
   listJoinRequests,
   listEvents,
+  listGroupReports,
+  listPendingPosts,
   listGroups,
   removeMember,
+  resolveGroupReport,
+  reviewPendingPost,
   respondJoinRequest,
   updateGroup,
   uploadAvatar,

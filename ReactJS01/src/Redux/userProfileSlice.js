@@ -117,6 +117,8 @@ const initialState = {
   activeTab: "posts",
   postsCursor: null,
   mediaCursor: null,
+  postsHasNextPage: false,
+  mediaHasNextPage: false,
 };
 
 const userProfileSlice = createSlice({
@@ -158,8 +160,10 @@ const userProfileSlice = createSlice({
       })
       .addCase(fetchUserPosts.fulfilled, (state, action) => {
         state.loading = false;
-        state.posts = action.payload.posts || [];
+        const nextPosts = action.payload.posts || [];
+        state.posts = action.meta.arg?.cursor ? [...state.posts, ...nextPosts] : nextPosts;
         state.postsCursor = action.payload.nextCursor;
+        state.postsHasNextPage = Boolean(action.payload.hasNextPage);
         state.error = null;
       })
       .addCase(fetchUserPosts.rejected, (state, action) => {
@@ -207,8 +211,10 @@ const userProfileSlice = createSlice({
       })
       .addCase(fetchUserMedia.fulfilled, (state, action) => {
         state.loading = false;
-        state.media = action.payload.media || [];
+        const nextMedia = action.payload.media || [];
+        state.media = action.meta.arg?.cursor ? [...state.media, ...nextMedia] : nextMedia;
         state.mediaCursor = action.payload.nextCursor;
+        state.mediaHasNextPage = Boolean(action.payload.hasNextPage);
         state.error = null;
       })
       .addCase(fetchUserMedia.rejected, (state, action) => {

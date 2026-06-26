@@ -9,8 +9,17 @@ const reportSchema = new mongoose.Schema(
     },
     targetType: {
       type: String,
-      enum: ["post", "user"],
+      enum: ["post", "user", "comment"],
       required: true,
+    },
+    resolvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      default: null,
+    },
+    resolvedAt: {
+      type: Date,
+      default: null,
     },
     targetId: {
       type: mongoose.Schema.Types.ObjectId,

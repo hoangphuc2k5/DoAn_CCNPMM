@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import {
   Avatar,
@@ -15,6 +15,7 @@ import {
   Radio,
   Select,
   Space,
+  Switch,
   Tag,
   Typography,
   Upload,
@@ -27,7 +28,10 @@ import {
   CalendarOutlined,
   CommentOutlined,
   DeleteOutlined,
+  EditOutlined,
   EllipsisOutlined,
+  EyeInvisibleOutlined,
+  FlagOutlined,
   HomeOutlined,
   LeftOutlined,
   LogoutOutlined,
@@ -51,15 +55,24 @@ import {
   getGroupApi,
   getGroupEventsApi,
   getGroupJoinRequestsApi,
+  getGroupMediaApi,
+  getGroupPendingPostsApi,
   getGroupPostsApi,
+  getGroupReportsApi,
   getGroupsApi,
   joinGroupApi,
   leaveGroupApi,
   leaveGroupEventApi,
   removeGroupMemberApi,
+  reportCommentApi,
+  reportPostApi,
+  resolveGroupReportApi,
   replyCommentApi,
   respondGroupJoinRequestApi,
+  reviewGroupPostApi,
+  updateGroupApi,
   updateGroupMemberRoleApi,
+  updatePostApi,
   reactPostApi,
   sharePostApi,
   uploadGroupAvatarApi,
@@ -67,6 +80,7 @@ import {
 } from "../util/api";
 import { getMediaUrl } from "../util/media";
 import { logout } from "../Redux/authSlice";
+import PostCommentsModal from "../components/post/PostCommentsModal";
 
 const normalizeMedia = (media = []) =>
   media
@@ -134,6 +148,7 @@ const getReactionOption = (type) =>
 
 const GroupsPage = () => {
   const navigate = useNavigate();
+  const { groupId: routeGroupId } = useParams();
   const dispatch = useDispatch();
   const { isAuthenticated, user } = useSelector((state) => state.auth);
   const userProfile = useSelector((state) => state.userProfile.profileUser);
@@ -141,8 +156,11 @@ const GroupsPage = () => {
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [posts, setPosts] = useState([]);
+  const [groupMedia, setGroupMedia] = useState([]);
   const [events, setEvents] = useState([]);
   const [joinRequests, setJoinRequests] = useState([]);
+  const [pendingPosts, setPendingPosts] = useState([]);
+  const [groupReports, setGroupReports] = useState([]);
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState("directory");
   const [listTab, setListTab] = useState("mine");
@@ -150,17 +168,23 @@ const GroupsPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [postContent, setPostContent] = useState("");
   const [postFiles, setPostFiles] = useState([]);
+  const [postVisibility, setPostVisibility] = useState("group");
   const [commentDrafts, setCommentDrafts] = useState({});
   const [replyDrafts, setReplyDrafts] = useState({});
+  const [commentModalPostId, setCommentModalPostId] = useState("");
+  const [hiddenPostIds, setHiddenPostIds] = useState([]);
   const [groupForm] = Form.useForm();
   const [eventForm] = Form.useForm();
+  const [settingsForm] = Form.useForm();
 
   const canPost = selectedGroup?.isMember;
   const canComment = selectedGroup?.isMember;
   const canModerate = ["admin", "moderator"].includes(selectedGroup?.myRole);
   const canManageRoles = selectedGroup?.myRole === "admin";
+  const settingPrivacy = Form.useWatch("privacy", settingsForm) || selectedGroup?.privacy;
   const displayName = userProfile?.name || user?.name || user?.email || "Nguoi Dung";
   const displayHandle = user?.email ? user.email.split("@")[0] : "nguoidung";
 
@@ -186,17 +210,50 @@ const GroupsPage = () => {
       getGroupEventsApi(groupId),
     ]);
 
-    if (groupRes?.EC === 0) setSelectedGroup(groupRes.data);
-    if (postRes?.EC === 0) setPosts(postRes.data || []);
-    if (eventRes?.EC === 0) setEvents(eventRes.data || []);
+    if (groupRes?.EC === 0) {
+      setSelectedGroup(groupRes.data);
+      setPostVisibility(groupRes.data.defaultPostVisibility || "group");
+      settingsForm.setFieldsValue({
+        name: groupRes.data.name || "",
+        description: groupRes.data.description || "",
+        privacy: groupRes.data.privacy || "public",
+        postApprovalEnabled: Boolean(groupRes.data.postApprovalEnabled),
+        defaultPostVisibility: groupRes.data.defaultPostVisibility || "group",
+      });
+    }
+    if (postRes?.EC === 0) {
+      setPosts(postRes.data || []);
+    } else {
+      setPosts([]);
+    }
+    if (eventRes?.EC === 0) {
+      setEvents(eventRes.data || []);
+    } else {
+      setEvents([]);
+    }
+
+    if (groupRes?.EC === 0 && (groupRes.data?.privacy !== "private" || groupRes.data?.isMember)) {
+      const mediaRes = await getGroupMediaApi(groupId, { page: 1, limit: 60 });
+      setGroupMedia(mediaRes?.EC === 0 ? mediaRes.data || [] : []);
+    } else {
+      setGroupMedia([]);
+    }
 
     const canLoadRequests =
       groupRes?.EC === 0 && ["admin", "moderator"].includes(groupRes.data?.myRole);
     if (canLoadRequests) {
-      const requestRes = await getGroupJoinRequestsApi(groupId);
+      const [requestRes, pendingRes, reportRes] = await Promise.all([
+        getGroupJoinRequestsApi(groupId),
+        getGroupPendingPostsApi(groupId),
+        getGroupReportsApi(groupId),
+      ]);
       setJoinRequests(requestRes?.EC === 0 ? requestRes.data || [] : []);
+      setPendingPosts(pendingRes?.EC === 0 ? pendingRes.data || [] : []);
+      setGroupReports(reportRes?.EC === 0 ? reportRes.data || [] : []);
     } else {
       setJoinRequests([]);
+      setPendingPosts([]);
+      setGroupReports([]);
     }
   };
 
@@ -209,8 +266,24 @@ const GroupsPage = () => {
   }, [isAuthenticated, navigate, searchQuery]);
 
   useEffect(() => {
-    loadGroupDetail(selectedGroupId);
-  }, [selectedGroupId]);
+    if (routeGroupId) {
+      setSelectedGroupId(routeGroupId);
+      setViewMode("detail");
+      loadGroupDetail(routeGroupId);
+      return;
+    }
+
+    setSelectedGroupId("");
+    setSelectedGroup(null);
+    setPosts([]);
+    setGroupMedia([]);
+    setEvents([]);
+    setJoinRequests([]);
+    setPendingPosts([]);
+    setGroupReports([]);
+    setCommentModalPostId("");
+    setViewMode("directory");
+  }, [routeGroupId]);
 
   const joinedCount = useMemo(
     () => groups.filter((group) => group.isMember).length,
@@ -230,10 +303,19 @@ const GroupsPage = () => {
     [groups, listTab],
   );
 
+  const activeCommentPost = useMemo(
+    () => posts.find((post) => post._id === commentModalPostId) || null,
+    [commentModalPostId, posts],
+  );
+
+  const visiblePosts = useMemo(
+    () => posts.filter((post) => !hiddenPostIds.includes(post._id)),
+    [hiddenPostIds, posts],
+  );
+
   const openGroup = (groupId) => {
-    setSelectedGroupId(groupId);
     setDetailTab("posts");
-    setViewMode("detail");
+    navigate(`/groups/${groupId}`);
   };
 
   const refreshCurrentGroup = async (groupId = selectedGroup?._id || selectedGroupId) => {
@@ -254,9 +336,8 @@ const GroupsPage = () => {
       groupForm.resetFields();
       await loadGroups();
       if (res.data?._id) {
-        setSelectedGroupId(res.data._id);
         setSelectedGroup(res.data);
-        setViewMode("detail");
+        navigate(`/groups/${res.data._id}`);
       }
     } else {
       message.error(res?.EM || "Không thể tạo nhóm");
@@ -291,6 +372,7 @@ const GroupsPage = () => {
 
     const formData = new FormData();
     formData.append("content", postContent);
+    formData.append("visibility", selectedGroup?.privacy === "private" ? "group" : postVisibility);
     postFiles.forEach((file) => {
       formData.append("media", file.originFileObj || file);
     });
@@ -462,6 +544,122 @@ const GroupsPage = () => {
     });
   };
 
+  const handleReportPost = (post) => {
+    if (post.author?._id === user?._id) {
+      message.warning("Không thể tự tố cáo bài viết của mình");
+      return;
+    }
+    let reason = "";
+    Modal.confirm({
+      title: "Báo cáo bài viết",
+      content: (
+        <Input.TextArea
+          rows={3}
+          placeholder="Nhập lý do báo cáo"
+          onChange={(event) => {
+            reason = event.target.value;
+          }}
+        />
+      ),
+      okText: "Gửi báo cáo",
+      cancelText: "Hủy",
+      onOk: async () => {
+        const res = await reportPostApi(post._id, reason);
+        if (res?.EC === 0) {
+          message.success(res.EM || "Đã gửi báo cáo");
+        } else {
+          message.error(res?.EM || "Không thể gửi báo cáo");
+        }
+      },
+    });
+  };
+
+  const handleReportComment = (post, comment) => {
+    if (comment.author?._id === user?._id) {
+      message.warning("Không thể tự tố cáo bình luận của mình");
+      return;
+    }
+    let reason = "";
+    Modal.confirm({
+      title: "Báo cáo bình luận",
+      content: (
+        <Input.TextArea
+          rows={3}
+          placeholder="Nhập lý do báo cáo"
+          onChange={(event) => {
+            reason = event.target.value;
+          }}
+        />
+      ),
+      okText: "Gửi báo cáo",
+      cancelText: "Hủy",
+      onOk: async () => {
+        const res = await reportCommentApi(comment._id, reason);
+        if (res?.EC === 0) {
+          message.success(res.EM || "Đã gửi báo cáo");
+        } else {
+          message.error(res?.EM || "Không thể gửi báo cáo");
+        }
+      },
+    });
+  };
+
+  const handleEditGroupPost = (post) => {
+    let content = post.content || "";
+    Modal.confirm({
+      title: "Chỉnh sửa bài viết",
+      content: (
+        <Input.TextArea
+          autoSize={{ minRows: 3, maxRows: 8 }}
+          defaultValue={content}
+          onChange={(event) => {
+            content = event.target.value;
+          }}
+        />
+      ),
+      okText: "Lưu",
+      cancelText: "Hủy",
+      onOk: async () => {
+        const res = await updatePostApi(post._id, { content });
+        if (res?.EC === 0) {
+          updateGroupPost(post._id, () => res.data);
+          message.success(res.EM || "Đã cập nhật bài viết");
+        } else {
+          message.error(res?.EM || "Không thể cập nhật bài viết");
+        }
+      },
+    });
+  };
+
+  const renderGroupPostMenu = (post) => {
+    const isMine = post.author?._id === user?._id;
+    const canRemove = canDeletePost(post);
+    const items = [
+      isMine ? { key: "edit", icon: <EditOutlined />, label: "Chỉnh sửa bài viết" } : null,
+      !isMine ? { key: "hide", icon: <EyeInvisibleOutlined />, label: "Ẩn bài viết" } : null,
+      !isMine ? { key: "report", icon: <FlagOutlined />, label: "Báo cáo bài viết" } : null,
+      canRemove ? { key: "delete", icon: <DeleteOutlined />, label: "Xóa bài viết", danger: true } : null,
+    ].filter(Boolean);
+
+    return {
+      items,
+      onClick: ({ key }) => {
+        if (key === "edit") {
+          handleEditGroupPost(post);
+        }
+        if (key === "hide") {
+          setHiddenPostIds((prev) => (prev.includes(post._id) ? prev : [...prev, post._id]));
+        }
+        if (key === "report") {
+          handleReportPost(post);
+        }
+        if (key === "delete") {
+          handleDeletePost(post);
+        }
+      },
+    };
+  };
+
   const handleCreateEvent = async () => {
     const values = await eventForm.validateFields();
     const res = await createGroupEventApi(selectedGroup._id, values);
@@ -472,6 +670,38 @@ const GroupsPage = () => {
       await loadGroupDetail(selectedGroup._id);
     } else {
       message.error(res?.EM || "Không thể tạo sự kiện");
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    const values = await settingsForm.validateFields();
+    const res = await updateGroupApi(selectedGroup._id, values);
+    if (res?.EC === 0) {
+      message.success("Đã cập nhật cài đặt nhóm");
+      setSettingsOpen(false);
+      await refreshCurrentGroup(selectedGroup._id);
+    } else {
+      message.error(res?.EM || "Không thể cập nhật cài đặt nhóm");
+    }
+  };
+
+  const handleReviewPost = async (postId, action) => {
+    const res = await reviewGroupPostApi(selectedGroup._id, postId, action);
+    if (res?.EC === 0) {
+      message.success(res.EM || "Đã xử lý bài viết");
+      await loadGroupDetail(selectedGroup._id);
+    } else {
+      message.error(res?.EM || "Không thể xử lý bài viết");
+    }
+  };
+
+  const handleResolveReport = async (reportId, action) => {
+    const res = await resolveGroupReportApi(selectedGroup._id, reportId, action);
+    if (res?.EC === 0) {
+      message.success(res.EM || "Đã xử lý tố cáo");
+      await loadGroupDetail(selectedGroup._id);
+    } else {
+      message.error(res?.EM || "Không thể xử lý tố cáo");
     }
   };
 
@@ -758,7 +988,7 @@ const GroupsPage = () => {
           className="tg-back-btn"
           icon={<LeftOutlined />}
           shape="circle"
-          onClick={() => setViewMode("directory")}
+          onClick={() => navigate("/groups")}
         />
       </div>
       <div className="tg-detail-info">
@@ -779,6 +1009,14 @@ const GroupsPage = () => {
           </div>
         </div>
         <div className="tg-detail-actions">
+          {canManageRoles ? (
+            <Button
+              className="tg-round-btn"
+              icon={<SettingOutlined />}
+              shape="circle"
+              onClick={() => setSettingsOpen(true)}
+            />
+          ) : null}
           <Button className="tg-outline-btn" onClick={() => handleJoinToggle(selectedGroup)}>
             {selectedGroup?.isMember ? "Rời nhóm" : "Tham gia"}
           </Button>
@@ -789,7 +1027,11 @@ const GroupsPage = () => {
         {[
           ["posts", "Bài viết"],
           ["members", `Thành viên (${selectedGroup?.members?.length || 0})`],
+          ["media", `Media (${groupMedia.length})`],
           ["events", "Sự kiện"],
+          ...(canModerate
+            ? [["moderation", `Kiểm duyệt (${pendingPosts.length + groupReports.length})`]]
+            : []),
         ].map(([key, label]) => (
           <button
             className={detailTab === key ? "active" : ""}
@@ -839,6 +1081,19 @@ const GroupsPage = () => {
               </Tag>
             ))}
           </div>
+          {selectedGroup?.privacy !== "private" ? (
+            <Select
+              value={postVisibility}
+              onChange={setPostVisibility}
+              style={{ width: 180 }}
+              options={[
+                { value: "group", label: "Chỉ trong nhóm" },
+                { value: "public", label: "Công khai" },
+              ]}
+            />
+          ) : (
+            <Tag>Chỉ thành viên nhóm</Tag>
+          )}
           <Button
             className="tg-primary-btn"
             disabled={!postContent.trim() && postFiles.length === 0}
@@ -867,13 +1122,94 @@ const GroupsPage = () => {
     </div>
   );
 
+  const renderGroupCommentList = (post, { preview = false } = {}) => {
+    const comments = post.comments || [];
+    const visibleComments = preview ? comments.slice(-1) : comments;
+
+    if (preview && !visibleComments.length) return null;
+
+    return (
+      <div className={preview ? "tg-comment-list preview" : "tg-comment-list"}>
+        {visibleComments.length ? (
+          visibleComments.map((comment) => (
+            <div className="tg-comment-thread" key={comment._id}>
+              <div className="tg-comment-row">
+                <Avatar size={32} src={getMediaUrl(comment.author?.avatar)}>
+                  {getInitials(comment.author?.name)}
+                </Avatar>
+                <div className="tg-comment-main">
+                  <div className="tg-comment-bubble">
+                    <strong>{comment.author?.name || comment.author?.email}</strong>
+                    <Typography.Paragraph className="mb-0">
+                      {comment.content}
+                    </Typography.Paragraph>
+                  </div>
+                  {!preview && canComment ? (
+                    <Space.Compact className="tg-reply-input">
+                      <Input
+                        value={replyDrafts[comment._id] || ""}
+                        onChange={(event) =>
+                          setReplyDrafts((prev) => ({
+                            ...prev,
+                            [comment._id]: event.target.value,
+                          }))
+                        }
+                        onPressEnter={() => handleReplyComment(post._id, comment._id)}
+                        placeholder="Trả lời..."
+                      />
+                      <Button onClick={() => handleReplyComment(post._id, comment._id)}>
+                        Trả lời
+                      </Button>
+                    </Space.Compact>
+                  ) : null}
+                </div>
+                {!preview && canDeleteComment(post, comment) ? (
+                  <Button
+                    danger
+                    icon={<DeleteOutlined />}
+                    type="text"
+                    onClick={() => handleDeleteComment(post, comment)}
+                  />
+                ) : null}
+              </div>
+              {!preview
+                ? (comment.replies || []).map((reply) => (
+                    <div className="tg-comment-row reply" key={reply._id}>
+                      <Avatar size={26} src={getMediaUrl(reply.author?.avatar)}>
+                        {getInitials(reply.author?.name)}
+                      </Avatar>
+                      <div className="tg-comment-bubble">
+                        <strong>{reply.author?.name || reply.author?.email}</strong>
+                        <Typography.Paragraph className="mb-0">
+                          {reply.content}
+                        </Typography.Paragraph>
+                      </div>
+                      {canDeleteComment(post, reply) ? (
+                        <Button
+                          danger
+                          icon={<DeleteOutlined />}
+                          type="text"
+                          onClick={() => handleDeleteComment(post, reply)}
+                        />
+                      ) : null}
+                    </div>
+                  ))
+                : null}
+            </div>
+          ))
+        ) : (
+          <span className="tg-comment-empty">Chưa có bình luận.</span>
+        )}
+      </div>
+    );
+  };
+
   const renderPosts = () => (
     <section className="tg-detail-section">
       {renderPostComposer()}
-      {posts.length ? (
-        posts.map((post, index) => (
+      {visiblePosts.length ? (
+        visiblePosts.map((post) => (
           <article className="tg-post-row" key={post._id}>
-            {index === 0 ? <strong className="tg-pinned">Bài ghim</strong> : null}
             <div className="tg-post-headline">
               <div className="tg-post-author">
                 <Avatar src={getMediaUrl(post.author?.avatar)}>
@@ -881,18 +1217,15 @@ const GroupsPage = () => {
                 </Avatar>
                 <div>
                   <strong>{post.author?.name || post.author?.email || "Thành viên"}</strong>
-                  <span>{new Date(post.createdAt).toLocaleString("vi-VN")}</span>
+                  <span>
+                    {new Date(post.createdAt).toLocaleString("vi-VN")} ·{" "}
+                    {post.visibility === "public" ? "Công khai" : "Chỉ trong nhóm"}
+                  </span>
                 </div>
               </div>
-              {canDeletePost(post) ? (
-                <Button
-                  danger
-                  icon={<DeleteOutlined />}
-                  shape="circle"
-                  type="text"
-                  onClick={() => handleDeletePost(post)}
-                />
-              ) : null}
+              <Dropdown menu={renderGroupPostMenu(post)} trigger={["click"]}>
+                <Button icon={<EllipsisOutlined />} shape="circle" type="text" />
+              </Dropdown>
             </div>
             {post.content ? <p className="tg-post-content">{post.content}</p> : null}
             {normalizeMedia(post.media).length ? (
@@ -936,7 +1269,11 @@ const GroupsPage = () => {
                   {post.stats?.reactions || 0})
                 </Button>
               </Popover>
-              <Button type="text" icon={<CommentOutlined />}>
+              <Button
+                type="text"
+                icon={<CommentOutlined />}
+                onClick={() => setCommentModalPostId(post._id)}
+              >
                 {post.stats?.comments || 0} bình luận
               </Button>
               <Button
@@ -970,76 +1307,7 @@ const GroupsPage = () => {
             ) : (
               <div className="tg-comment-locked">Tham gia nhóm để bình luận.</div>
             )}
-            <div className="tg-comment-list">
-              {(post.comments || []).length ? (
-                (post.comments || []).map((comment) => (
-                  <div className="tg-comment-thread" key={comment._id}>
-                    <div className="tg-comment-row">
-                      <Avatar size={32} src={getMediaUrl(comment.author?.avatar)}>
-                        {getInitials(comment.author?.name)}
-                      </Avatar>
-                      <div className="tg-comment-main">
-                        <div className="tg-comment-bubble">
-                          <strong>{comment.author?.name || comment.author?.email}</strong>
-                          <Typography.Paragraph className="mb-0">
-                            {comment.content}
-                          </Typography.Paragraph>
-                        </div>
-                        {canComment ? (
-                          <Space.Compact className="tg-reply-input">
-                            <Input
-                              value={replyDrafts[comment._id] || ""}
-                              onChange={(event) =>
-                                setReplyDrafts((prev) => ({
-                                  ...prev,
-                                  [comment._id]: event.target.value,
-                                }))
-                              }
-                              onPressEnter={() => handleReplyComment(post._id, comment._id)}
-                              placeholder="Trả lời..."
-                            />
-                            <Button onClick={() => handleReplyComment(post._id, comment._id)}>
-                              Trả lời
-                            </Button>
-                          </Space.Compact>
-                        ) : null}
-                      </div>
-                      {canDeleteComment(post, comment) ? (
-                        <Button
-                          danger
-                          icon={<DeleteOutlined />}
-                          type="text"
-                          onClick={() => handleDeleteComment(post, comment)}
-                        />
-                      ) : null}
-                    </div>
-                    {(comment.replies || []).map((reply) => (
-                      <div className="tg-comment-row reply" key={reply._id}>
-                        <Avatar size={26} src={getMediaUrl(reply.author?.avatar)}>
-                          {getInitials(reply.author?.name)}
-                        </Avatar>
-                        <div className="tg-comment-bubble">
-                          <strong>{reply.author?.name || reply.author?.email}</strong>
-                          <Typography.Paragraph className="mb-0">
-                            {reply.content}
-                          </Typography.Paragraph>
-                        </div>
-                        {canDeleteComment(post, reply) ? (
-                          <Button
-                            danger
-                            icon={<DeleteOutlined />}
-                            type="text"
-                            onClick={() => handleDeleteComment(post, reply)}
-                          />
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ))
-              ) : (
-                <span className="tg-comment-empty">Chưa có bình luận.</span>
-              )}
-            </div>
+            {renderGroupCommentList(post, { preview: true })}
           </article>
         ))
       ) : (
@@ -1137,6 +1405,35 @@ const GroupsPage = () => {
     </section>
   );
 
+  const renderMedia = () => (
+    <section className="tg-detail-section">
+      {groupMedia.length ? (
+        <Image.PreviewGroup>
+          <div className="tg-media-gallery">
+            {groupMedia.map((item, index) => {
+              const src = getMediaUrl(item.url);
+              const key = `${src}-${item.postId || index}`;
+              return item.type === "video" ? (
+                <video className="tg-media-tile" controls key={key} src={src} />
+              ) : (
+                <Image
+                  alt={item.originalName || "group media"}
+                  className="tg-media-tile"
+                  key={key}
+                  src={src}
+                />
+              );
+            })}
+          </div>
+        </Image.PreviewGroup>
+      ) : (
+        <div className="tg-empty-state">
+          <Empty description="Chưa có media trong nhóm" />
+        </div>
+      )}
+    </section>
+  );
+
   const renderEvents = () => (
     <section className="tg-detail-section">
       {canModerate ? (
@@ -1176,6 +1473,87 @@ const GroupsPage = () => {
     </section>
   );
 
+  const renderModeration = () => (
+    <section className="tg-detail-section">
+      <div className="tg-request-panel">
+        <h2>Bài viết chờ duyệt ({pendingPosts.length})</h2>
+        {pendingPosts.length ? (
+          pendingPosts.map((post) => (
+            <article className="tg-moderation-row" key={post._id}>
+              <div>
+                <Space>
+                  <Avatar src={getMediaUrl(post.author?.avatar)}>
+                    {getInitials(post.author?.name)}
+                  </Avatar>
+                  <strong>{post.author?.name || post.author?.email}</strong>
+                  <Tag>{post.visibility === "public" ? "Công khai" : "Chỉ trong nhóm"}</Tag>
+                </Space>
+                <p>{post.content || "[Media]"}</p>
+              </div>
+              <Space>
+                <Button
+                  className="tg-primary-btn"
+                  onClick={() => handleReviewPost(post._id, "approve")}
+                >
+                  Phê duyệt
+                </Button>
+                <Button danger onClick={() => handleReviewPost(post._id, "reject")}>
+                  Từ chối
+                </Button>
+              </Space>
+            </article>
+          ))
+        ) : (
+          <Empty description="Không có bài viết chờ duyệt" />
+        )}
+      </div>
+
+      <div className="tg-request-panel">
+        <h2>Tố cáo trong nhóm ({groupReports.length})</h2>
+        {groupReports.length ? (
+          groupReports.map((report) => (
+            <article className="tg-moderation-row" key={report._id}>
+              <div>
+                <Space wrap>
+                  <Tag color="red">
+                    {report.targetType === "comment" ? "Báo cáo bình luận" : "Báo cáo bài viết"}
+                  </Tag>
+                  <span>{formatDateTime(report.createdAt)}</span>
+                  <strong>{report.reporter?.name || report.reporter?.email}</strong>
+                </Space>
+                <p>Lý do: {report.reason}</p>
+                {report.targetType === "comment" ? (
+                  <>
+                    <p>Bình luận bị báo cáo: {report.targetComment?.content || "[Đã xóa]"}</p>
+                    <p>Bài chứa bình luận: {report.targetPost?.content || "[Media]"}</p>
+                  </>
+                ) : (
+                  <p>Bài bị báo cáo: {report.targetPost?.content || "[Media]"}</p>
+                )}
+              </div>
+              <Space>
+                <Button onClick={() => handleResolveReport(report._id, "reviewing")}>
+                  Đang xem
+                </Button>
+                <Button
+                  className="tg-primary-btn"
+                  onClick={() => handleResolveReport(report._id, "resolved")}
+                >
+                  Đã xử lý
+                </Button>
+                <Button danger onClick={() => handleResolveReport(report._id, "rejected")}>
+                  Bỏ qua
+                </Button>
+              </Space>
+            </article>
+          ))
+        ) : (
+          <Empty description="Không có tố cáo đang mở" />
+        )}
+      </div>
+    </section>
+  );
+
   const renderDetail = () => (
     <section className="tg-group-detail">
       {selectedGroup ? (
@@ -1183,7 +1561,9 @@ const GroupsPage = () => {
           {renderDetailHeader()}
           {detailTab === "posts" ? renderPosts() : null}
           {detailTab === "members" ? renderMembers() : null}
+          {detailTab === "media" ? renderMedia() : null}
           {detailTab === "events" ? renderEvents() : null}
+          {detailTab === "moderation" ? renderModeration() : null}
         </>
       ) : (
         <div className="tg-empty-state">
@@ -1199,6 +1579,88 @@ const GroupsPage = () => {
       <section className="tg-workspace">
         {viewMode === "detail" ? renderDetail() : renderDirectory()}
       </section>
+
+      <PostCommentsModal
+        open={Boolean(activeCommentPost)}
+        post={activeCommentPost}
+        onClose={() => setCommentModalPostId("")}
+        currentUser={{ ...user, name: displayName, avatar: userProfile?.avatar || user?.avatar }}
+        commentValue={activeCommentPost ? commentDrafts[activeCommentPost._id] || "" : ""}
+        onCommentChange={(value) =>
+          activeCommentPost &&
+          setCommentDrafts((prev) => ({
+            ...prev,
+            [activeCommentPost._id]: value,
+          }))
+        }
+        onSubmitComment={handleCommentPost}
+        replyDrafts={replyDrafts}
+        onReplyChange={(commentId, value) =>
+          setReplyDrafts((prev) => ({ ...prev, [commentId]: value }))
+        }
+        onSubmitReply={handleReplyComment}
+        canComment={canComment}
+        canDeleteComment={canDeleteComment}
+        onDeleteComment={handleDeleteComment}
+        onReportComment={handleReportComment}
+        onReact={(post) => handleReactPost(post, post.myReaction || "like")}
+        onShare={handleSharePost}
+        shareDisabled={selectedGroup?.privacy === "private"}
+      />
+
+      <Modal
+        title="Cài đặt nhóm"
+        open={settingsOpen}
+        onOk={handleSaveSettings}
+        onCancel={() => setSettingsOpen(false)}
+        okText="Lưu"
+        cancelText="Hủy"
+      >
+        <Form
+          form={settingsForm}
+          layout="vertical"
+          onValuesChange={(changedValues) => {
+            if (changedValues.privacy === "private") {
+              settingsForm.setFieldValue("defaultPostVisibility", "group");
+            }
+          }}
+        >
+          <Form.Item
+            name="name"
+            label="Tên nhóm"
+            rules={[{ required: true, message: "Vui lòng nhập tên nhóm" }]}
+          >
+            <Input placeholder="Tên nhóm" />
+          </Form.Item>
+          <Form.Item name="description" label="Mô tả">
+            <Input.TextArea
+              autoSize={{ minRows: 3, maxRows: 6 }}
+              placeholder="Mô tả ngắn về nhóm"
+            />
+          </Form.Item>
+          <Form.Item name="privacy" label="Quyền riêng tư">
+            <Radio.Group>
+              <Radio value="public">Công khai</Radio>
+              <Radio value="private">Riêng tư</Radio>
+            </Radio.Group>
+          </Form.Item>
+          <Form.Item
+            name="postApprovalEnabled"
+            label="Phê duyệt bài viết trước khi hiển thị"
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item name="defaultPostVisibility" label="Chế độ hiển thị mặc định">
+            <Radio.Group>
+              <Radio value="group">Chỉ thành viên nhóm</Radio>
+              <Radio value="public" disabled={settingPrivacy === "private"}>
+                Công khai
+              </Radio>
+            </Radio.Group>
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title="Tạo nhóm mới"

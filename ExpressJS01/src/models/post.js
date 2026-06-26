@@ -14,8 +14,22 @@ const postSchema = new mongoose.Schema(
     },
     visibility: {
       type: String,
-      enum: ["public", "friends"],
+      enum: ["public", "friends", "group"],
       default: "public",
+    },
+    approvalStatus: {
+      type: String,
+      enum: ["published", "pending", "rejected"],
+      default: "published",
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      default: null,
+    },
+    reviewedAt: {
+      type: Date,
+      default: null,
     },
     mentions: [
       {

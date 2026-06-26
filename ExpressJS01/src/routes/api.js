@@ -58,6 +58,7 @@ routerAPI.get("/profile/:userId/media", profileController.getUserMedia);
 routerAPI.post("/posts", postMediaUpload.array("media", 10), socialController.createPost);
 routerAPI.get("/feed", socialController.getFeed);
 routerAPI.get("/posts/:postId", socialController.getPostById);
+routerAPI.patch("/posts/:postId", socialController.updatePost);
 routerAPI.delete("/posts/:postId", socialController.deletePost);
 routerAPI.get("/trending", socialController.getTrendingTopics);
 routerAPI.use("/search", searchRouter);
@@ -66,6 +67,7 @@ routerAPI.post("/posts/:postId/react", socialController.reactPost);
 routerAPI.post("/posts/:postId/comments", socialController.commentPost);
 routerAPI.post("/comments/:commentId/replies", socialController.replyComment);
 routerAPI.delete("/comments/:commentId", socialController.deleteComment);
+routerAPI.post("/comments/:commentId/report", socialController.reportComment);
 routerAPI.post("/posts/:postId/share", socialController.sharePost);
 routerAPI.post("/posts/:postId/report", socialController.reportPost);
 
@@ -121,11 +123,16 @@ routerAPI.patch(
   groupController.updateMemberRole,
 );
 routerAPI.get("/groups/:groupId/posts", groupController.getGroupPosts);
+routerAPI.get("/groups/:groupId/media", groupController.getGroupMedia);
+routerAPI.get("/groups/:groupId/posts/pending", groupController.listPendingPosts);
+routerAPI.patch("/groups/:groupId/posts/:postId/review", groupController.reviewPendingPost);
 routerAPI.post(
   "/groups/:groupId/posts",
   postMediaUpload.array("media", 10),
   groupController.createGroupPost,
 );
+routerAPI.get("/groups/:groupId/reports", groupController.listGroupReports);
+routerAPI.patch("/groups/:groupId/reports/:reportId", groupController.resolveGroupReport);
 routerAPI.get("/groups/:groupId/events", groupController.listEvents);
 routerAPI.post("/groups/:groupId/events", groupController.createEvent);
 routerAPI.post("/groups/:groupId/events/:eventId/attend", groupController.attendEvent);
