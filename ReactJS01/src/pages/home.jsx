@@ -1190,25 +1190,6 @@ const HomePage = () => {
           )}
         </Space>
       </main>
-
-      <aside className="social-right-rail">
-        <Card className="social-panel" title="Chủ đề thịnh hành">
-          <Space wrap>
-            {trending.length ? (
-              trending.map((item) => (
-                <Tag key={item.topic} color="blue" className="trend-tag">
-                  <ThunderboltOutlined /> #{item.topic} ({item.count})
-                </Tag>
-              ))
-            ) : (
-              <Typography.Text type="secondary">
-                Chưa có chủ đề nổi bật
-              </Typography.Text>
-            )}
-          </Space>
-        </Card>
-      </aside>
-
       <PostCommentsModal
         open={Boolean(activeCommentPost)}
         post={activeCommentPost}
