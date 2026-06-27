@@ -72,22 +72,29 @@ const initSocket = (server) => {
     });
 
     // Typing indicators
-    socket.on("typing", ({ conversationId }) => {
+    socket.on("typing", ({ conversationId, userId, userName }) => {
       if (conversationId) {
         socket.to(conversationId.toString()).emit("typing", {
           conversationId,
-          userId: socket.user._id,
-          userName: socket.user.name,
+          userId,
+          userName,
         });
       }
     });
 
-    socket.on("stop_typing", ({ conversationId }) => {
+    socket.on("stop_typing", ({ conversationId, userId }) => {
       if (conversationId) {
         socket.to(conversationId.toString()).emit("stop_typing", {
           conversationId,
-          userId: socket.user._id,
+          userId,
         });
+      }
+    });
+
+    // Mark message as seen from client
+    socket.on("message_seen", async ({ conversationId, userId, seenAt }) => {
+      if (conversationId && userId) {
+        emitSeenMessage(conversationId, userId, seenAt || new Date());
       }
     });
 
@@ -111,28 +118,56 @@ const initSocket = (server) => {
 
 const getIO = () => ioInstance;
 
+const toSocketPayload = (value) => {
+  if (!value) return value;
+  if (typeof value.toObject === "function") {
+    return value.toObject({ virtuals: true });
+  }
+  if (typeof value.toJSON === "function") {
+    return value.toJSON();
+  }
+  return value;
+};
+
 const emitNewMessage = (conversationId, message) => {
   if (!ioInstance) return;
 
+  const payload = toSocketPayload(message);
   const convIdStr = conversationId.toString();
-  // Send message to everyone inside the conversation room
-  ioInstance.to(convIdStr).emit("receive_message", message);
 
-  // Send conversation update to all participants in their private rooms
-  // so their sidebar lists update in real-time even if they are not in the chat room
-  const participants = message.conversation?.participants || [];
+  // Gửi tới phòng hội thoại (người đang mở chat)
+  ioInstance.to(convIdStr).emit("receive_message", payload);
+
+  // Gửi tới phòng riêng từng participant để đảm bảo realtime kể cả khi chưa join_room
+  const participants = payload.conversation?.participants || [];
   participants.forEach((participant) => {
-    const pId = participant._id ? participant._id.toString() : participant.toString();
+    const pId = (participant._id || participant).toString();
+
     ioInstance.to(pId).emit("conversation_updated", {
       conversationId: convIdStr,
-      lastMessage: message,
+      lastMessage: payload,
     });
+
+    ioInstance.to(pId).emit("receive_message", payload);
   });
 };
 
-const emitRecallMessage = (conversationId, message) => {
+const emitRecallMessage = (conversationId, message, participants = []) => {
   if (!ioInstance) return;
-  ioInstance.to(conversationId.toString()).emit("message_recalled", message);
+
+  const payload = toSocketPayload(message);
+  const convIdStr = conversationId.toString();
+
+  ioInstance.to(convIdStr).emit("message_recalled", payload);
+
+  const participantList = participants.length
+    ? participants
+    : payload.conversation?.participants || [];
+
+  participantList.forEach((participant) => {
+    const pId = (participant._id || participant).toString();
+    ioInstance.to(pId).emit("message_recalled", payload);
+  });
 };
 
 const emitSeenMessage = (conversationId, userId, seenAt) => {
@@ -149,6 +184,31 @@ const emitNotification = (userId, payload) => {
   ioInstance.to(userId.toString()).emit("notification:new", payload);
 };
 
+const emitChatUnreadUpdated = (userId, summary) => {
+  if (!ioInstance || !userId || !summary) return;
+  ioInstance.to(userId.toString()).emit("chat_unread_updated", summary);
+};
+
+const emitBlockStatusChanged = (userId, targetUserId, isBlocked) => {
+  if (!ioInstance || !userId || !targetUserId) return;
+  // Gửi cho người bị chặn/bỏ chặn để họ biết trạng thái thay đổi
+  ioInstance.to(targetUserId.toString()).emit("block_status_changed", {
+    blockerId: userId.toString(),
+    targetId: targetUserId.toString(),
+    isBlocked,
+  });
+};
+
+const emitRestrictStatusChanged = (userId, targetUserId, isRestricted) => {
+  if (!ioInstance || !userId || !targetUserId) return;
+  // Gửi cho người bị hạn chế/bỏ hạn chế để họ biết trạng thái thay đổi
+  ioInstance.to(targetUserId.toString()).emit("restrict_status_changed", {
+    restrictorId: userId.toString(),
+    targetId: targetUserId.toString(),
+    isRestricted,
+  });
+};
+
 module.exports = {
   initSocket,
   getIO,
@@ -156,4 +216,7 @@ module.exports = {
   emitRecallMessage,
   emitSeenMessage,
   emitNotification,
+  emitChatUnreadUpdated,
+  emitBlockStatusChanged,
+  emitRestrictStatusChanged,
 };

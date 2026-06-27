@@ -14,6 +14,7 @@ import {
 } from "@ant-design/icons";
 import { getMediaUrl } from "../../util/media";
 import "../../styles/user-profile.css";
+import { useNavigate } from "react-router-dom";
 
 const normalizeMedia = (media = []) =>
   media
@@ -45,6 +46,7 @@ const PostsList = ({
   onPostClick,
   onShareClick,
 }) => {
+  const navigate = useNavigate();
   if (loading && posts.length === 0) {
     return (
       <div style={{ textAlign: "center", padding: "60px 0" }}>
@@ -84,7 +86,14 @@ const PostsList = ({
       ) : (
         <div className="posts-cards-grid">
           {posts.map((post) => {
-            const mediaItems = normalizeMedia(post.media);
+            const sharedPost =
+              post.sharedPost &&
+              typeof post.sharedPost === "object" &&
+              post.sharedPost._id
+                ? post.sharedPost
+                : null;
+            // Use shared post's media if available, otherwise use post's own media
+            const mediaItems = normalizeMedia(sharedPost?.media || post.media);
             const hero = mediaItems[0];
             const heroUrl = hero?.url ? getMediaUrl(hero.url) : "";
 
@@ -129,6 +138,63 @@ const PostsList = ({
                   <Typography.Paragraph className="post-card-title" ellipsis={{ rows: 3 }}>
                     {post.content || "Bài viết không có nội dung"}
                   </Typography.Paragraph>
+
+                  {sharedPost ? (
+                    <div className="shared-post-preview" style={{
+                      marginTop: 8,
+                      padding: 8,
+                      borderRadius: 8,
+                      border: "1px solid #eef0f6",
+                      background: "#fbfbfe",
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "center",
+                    }}>
+                      <div style={{ width: 64, height: 44, flexShrink: 0, overflow: "hidden", borderRadius: 6, background: "#f4f6fa" }}>
+                        {(() => {
+                          const sharedMedia = normalizeMedia(sharedPost.media || []);
+                          const m = sharedMedia[0];
+                          if (m) {
+                            const url = m.url ? getMediaUrl(m.url) : "";
+                            return m.type === "video" ? (
+                              <video src={url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            ) : (
+                              <img src={url} alt="shared" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            );
+                          }
+                          return (
+                            <PictureOutlined style={{ fontSize: 20, color: "#b0b6c3", display: "block", margin: "10px auto" }} />
+                          );
+                        })()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>
+                            {sharedPost.author?.name || "Người dùng"}
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/?postId=${sharedPost._id}`);
+                            }}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              color: "#1890ff",
+                              cursor: "pointer",
+                              fontSize: 12,
+                              padding: 4,
+                            }}
+                          >
+                            Xem bài gốc
+                          </button>
+                        </div>
+                        <div style={{ fontSize: 12, color: "#6b7280", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {sharedPost.content || "(Bài viết gốc không có nội dung)"}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div className="post-card-footer">
                     <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>

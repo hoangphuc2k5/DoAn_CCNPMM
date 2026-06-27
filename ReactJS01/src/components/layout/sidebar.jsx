@@ -46,7 +46,6 @@ const notificationText = {
   follow: "đã theo dõi bạn",
   friend_request: "đã gửi lời mời kết bạn",
   friend_accept: "đã chấp nhận lời mời kết bạn",
-  new_message: "đã gửi tin nhắn mới",
   report_received: "có báo cáo mới",
 };
 
@@ -55,7 +54,7 @@ const Sidebar = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { isAuthenticated, user } = useSelector((state) => state.auth);
-  const { socket } = useSocket();
+  const { socket, chatUnread } = useSocket();
   
   // States
   const [searchOpen, setSearchOpen] = useState(false);
@@ -214,6 +213,8 @@ const Sidebar = () => {
     if (!socket) return undefined;
 
     const handleNewNotification = ({ notification, unread }) => {
+      if (notification?.type === "new_message") return;
+
       const enriched = {
         ...notification,
         text: notificationText[notification.type] || notification.type,
@@ -343,8 +344,11 @@ const Sidebar = () => {
                 <Link
                   to="/chat"
                   className={`sidebar-item ${activeKey === "chat" ? "active" : ""}`}
+                  style={{ position: "relative" }}
                 >
-                  <MessageOutlined />
+                  <Badge count={chatUnread.total} size="small" offset={[5, -5]} color="#FF3B30">
+                    <MessageOutlined style={{ fontSize: 20 }} />
+                  </Badge>
                   <span>Tin nhắn</span>
                 </Link>
 

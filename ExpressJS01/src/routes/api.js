@@ -135,6 +135,8 @@ routerAPI.post(
 );
 routerAPI.post("/users/:targetUserId/block", socialController.blockUser);
 routerAPI.delete("/users/:targetUserId/block", socialController.unblockUser);
+routerAPI.post("/users/:targetUserId/restrict", socialController.restrictUser);
+routerAPI.delete("/users/:targetUserId/restrict", socialController.unrestrictUser);
 routerAPI.post("/users/:targetUserId/report", socialController.reportUser);
 
 routerAPI.get("/notifications", socialController.getNotifications);
@@ -192,6 +194,7 @@ routerAPI.post("/groups/:groupId/events", groupController.createEvent);
 routerAPI.post("/groups/:groupId/events/:eventId/attend", groupController.attendEvent);
 routerAPI.delete("/groups/:groupId/events/:eventId/attend", groupController.leaveEvent);
 
+routerAPI.get("/conversations/unread-summary", chatController.getUnreadSummary);
 routerAPI.get("/conversations", chatController.getConversations);
 routerAPI.post("/conversations", chatController.createConversation);
 routerAPI.get("/conversations/:conversationId/messages", chatController.getMessages);

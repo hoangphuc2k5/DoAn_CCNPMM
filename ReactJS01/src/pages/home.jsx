@@ -273,6 +273,7 @@ const HomePage = () => {
   const [focusedCommentPostId, setFocusedCommentPostId] = useState(null);
   const commentInputRefs = useRef({});
   const observerTarget = useRef(null);
+  const postsRef = useRef([]);        // always holds latest posts without being a dep
   const targetPostId = searchParams.get("postId");
   const targetCommentId = searchParams.get("commentId");
   const [commentModalPostId, setCommentModalPostId] = useState("");
@@ -390,18 +391,28 @@ const HomePage = () => {
     );
   };
 
+  // Keep postsRef in sync so openTargetPost can read latest posts without
+  // having `posts` as a dependency (which caused multiple concurrent runs)
+  useEffect(() => { postsRef.current = posts; }, [posts]);
+
   useEffect(() => {
     if (!isLoggedIn || !targetPostId) return;
 
+    let cancelled = false;
+
     const openTargetPost = async () => {
-      const hasPost = posts.some((post) => post._id === targetPostId);
+      // Use ref so we always see the latest posts without re-running on every posts change
+      const hasPost = postsRef.current.some((post) => post._id === targetPostId);
       if (!hasPost) {
         const res = await getPostByIdApi(targetPostId);
+        if (cancelled) return;
         if (res?.EC === 0) {
           setPosts((prev) => [
             res.data,
             ...prev.filter((post) => post._id !== targetPostId),
           ]);
+          // Wait for React to commit the new post to the DOM before scrolling
+          await new Promise((resolve) => setTimeout(resolve, 500));
         } else {
           message.error(res?.EM || "Không thể mở bài viết từ thông báo");
           setSearchParams({}, { replace: true });
@@ -409,18 +420,24 @@ const HomePage = () => {
         }
       }
 
+      if (cancelled) return;
       setHighlightedPostId(targetPostId);
       setHighlightedCommentId(targetCommentId || "");
       scrollToPostTarget(targetPostId, targetCommentId);
       window.setTimeout(() => {
-        setHighlightedPostId("");
-        setHighlightedCommentId("");
+        if (!cancelled) {
+          setHighlightedPostId("");
+          setHighlightedCommentId("");
+        }
       }, 3500);
       setSearchParams({}, { replace: true });
     };
 
     openTargetPost();
-  }, [isLoggedIn, targetPostId, targetCommentId, posts]);
+
+    // Cleanup: mark as cancelled if targetPostId changes before async completes
+    return () => { cancelled = true; };
+  }, [isLoggedIn, targetPostId, targetCommentId]); // posts intentionally excluded – use postsRef instead
   const removeCommentFromPost = (postId, commentId) => {
     updatePost(postId, (post) => ({
       ...post,
@@ -905,12 +922,35 @@ const HomePage = () => {
   return (
     <div className="home-page-layout">
       <main className="social-feed">
-        <Card className="composer-card" onClick={() => setCreatePostVisible(true)} style={{ cursor: "pointer" }}>
+        {/* Tabs: Dành cho bạn / Đã theo dõi */}
+        <div className="flex border-b border-gray-200 mb-4">
+          <button
+            className={`flex-1 py-4 text-center font-semibold ${
+              mode === "latest"
+                ? "text-purple-700 border-b-2 border-purple-700"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+            onClick={() => setMode("latest")}
+          >
+            Dành cho bạn
+          </button>
+          <button
+            className={`flex-1 py-4 text-center font-semibold ${
+              mode === "friends"
+                ? "text-purple-700 border-b-2 border-purple-700"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+            onClick={() => setMode("friends")}
+          >
+            Đã theo dõi
+          </button>
+        </div>
+
         <CreatePostComposer
-          avatar={userProfile?.avatar || user?.avatar}
+          avatar={user?.avatar}
           content={postContent}
           files={postMediaFiles}
-          modalPlaceholder="Tạo bài viết công khai..."
+          modalPlaceholder="Bạn đang nghĩ gì thế?..."
           name={displayName}
           onContentChange={setPostContent}
           onFilesChange={(fileList) => setPostMediaFiles(fileList)}
@@ -922,188 +962,11 @@ const HomePage = () => {
           visibilityOptions={[
             { value: "public", label: "Công khai" },
             { value: "friends", label: "Bạn bè" },
+            { value: "private", label: "Riêng tư" },
           ]}
           visibilityValue={visibility}
           onVisibilityChange={setVisibility}
         />
-        </Card>
-
-        <Card className="composer-card composer-card-collapsed legacy-composer-hidden">
-          <div className="composer-head">
-            <Avatar
-              size={44}
-              src={getMediaUrl(userProfile?.avatar)}
-              icon={<UserOutlined />}
-            >
-              {displayName[0]}
-            </Avatar>
-
-            <Input
-              className="composer-pill"
-              value=""
-              readOnly
-              onClick={() => setComposeOpen(true)}
-              onFocus={() => setComposeOpen(true)}
-              placeholder={`${displayName}, bạn đang nghĩ gì?`}
-            />
-          </div>
-          <Input.TextArea
-            className="composer-textarea"
-            rows={3}
-            value=""
-            placeholder="Viết bài đăng... dùng @email để mention và #topic để tạo trending"
-            readOnly
-          />
-          <div className="composer-media">
-            <Upload
-              accept="image/*,video/*"
-              beforeUpload={() => false}
-              fileList={postMediaFiles}
-              multiple
-              onChange={handleMediaChange}
-              showUploadList={false}
-            >
-              <Button icon={<PictureOutlined />}>Them anh/video</Button>
-            </Upload>
-            {postMediaFiles.length ? (
-              <div className="composer-media-list">
-                {postMediaFiles.map((file) => (
-                  <Tag
-                    key={file.uid}
-                    closable
-                    closeIcon={<DeleteOutlined />}
-                    onClose={(event) => {
-                      event.preventDefault();
-                      removeMediaFile(file.uid);
-                    }}
-                  >
-                    {file.name}
-                  </Tag>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <Divider className="compact-divider" />
-          <div className="composer-actions">
-            <Select
-              value={visibility}
-              open={false}
-              suffixIcon={<GlobalOutlined />}
-              options={[
-                { value: "public", label: "Công khai" },
-                { value: "friends", label: "Bạn bè" },
-              ]}
-              style={{ width: 148 }}
-            />
-            <Button
-              type="primary"
-              onClick={handleCreatePost}
-              disabled={!postContent.trim() && postMediaFiles.length === 0}
-            >
-              Đăng bài
-            </Button>
-          </div>
-        </Card>
-
-        <Modal
-          className="create-post-modal"
-          title={<div className="create-post-title">Tạo bài viết</div>}
-          open={false}
-          onCancel={() => setComposeOpen(false)}
-          footer={null}
-          width={620}
-          centered
-        >
-          <div className="create-post-author">
-            <Avatar
-              size={48}
-              src={getMediaUrl(userProfile?.avatar)}
-              icon={<UserOutlined />}
-            >
-              {displayName[0]}
-            </Avatar>
-            <div>
-              <strong>{displayName}</strong>
-              <Select
-                value={visibility}
-                onChange={setVisibility}
-                suffixIcon={<GlobalOutlined />}
-                options={[
-                  { value: "public", label: "Công khai" },
-                  { value: "friends", label: "Bạn bè" },
-                ]}
-                size="small"
-                style={{ minWidth: 132 }}
-              />
-            </div>
-          </div>
-          <Input.TextArea
-            className="create-post-textarea"
-            autoFocus
-            autoSize={{ minRows: 7, maxRows: 12 }}
-            value={postContent}
-            onChange={(event) => setPostContent(event.target.value)}
-            placeholder="Tạo bài viết công khai..."
-          />
-          <div className="create-post-addons">
-            <strong>Thêm vào bài viết của bạn</strong>
-            <Upload
-              accept="image/*,video/*"
-              beforeUpload={() => false}
-              fileList={postMediaFiles}
-              multiple
-              onChange={handleMediaChange}
-              showUploadList={false}
-            >
-              <Button icon={<PictureOutlined />} shape="circle" type="text" />
-            </Upload>
-          </div>
-          {postMediaFiles.length ? (
-            <div className="composer-media-list create-post-file-list">
-              {postMediaFiles.map((file) => (
-                <Tag
-                  key={file.uid}
-                  closable
-                  closeIcon={<DeleteOutlined />}
-                  onClose={(event) => {
-                    event.preventDefault();
-                    removeMediaFile(file.uid);
-                  }}
-                >
-                  {file.name}
-                </Tag>
-              ))}
-            </div>
-          ) : null}
-          <Button
-            block
-            className="create-post-submit"
-            type="primary"
-            onClick={handleCreatePost}
-            disabled={!postContent.trim() && postMediaFiles.length === 0}
-          >
-            Đăng
-          </Button>
-        </Modal>
-
-        <div className="feed-toolbar">
-          <Radio.Group
-            value={mode}
-            onChange={(event) => setMode(event.target.value)}
-          >
-            <Radio.Button value="latest">Mới nhất</Radio.Button>
-            <Radio.Button value="algorithm">Gợi ý</Radio.Button>
-            <Radio.Button value="friends">Bạn bè</Radio.Button>
-          </Radio.Group>
-          <Button
-            icon={<BellOutlined />}
-            onClick={() => setNotificationOpen(true)}
-          >
-            <Badge count={unread} offset={[10, -6]}>
-              Thông báo
-            </Badge>
-          </Button>
-        </div>
 
         <Space direction="vertical" style={{ width: "100%" }} size={16}>
           {visiblePosts.length ? (
@@ -1111,70 +974,141 @@ const HomePage = () => {
               <Card
                 key={post._id}
                 id={`post-${post._id}`}
-                className={`post-card ${highlightedPostId === post._id ? "post-card-highlight" : ""}`}
+                className={`post-card mb-4 ${highlightedPostId === post._id ? "post-card-highlight" : ""}`}
               >
-                <div className="post-head">
-                  <Space
-                    align="start"
-                    style={{ cursor: "pointer" }}
-                    onClick={() => navigate(`/profile/${post.author?._id}`)}
-                  >
+                {/* Post Header */}
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-3" style={{ cursor: "pointer" }} onClick={() => navigate(`/profile/${post.author?._id}`)}>
                     <Avatar
-                      size={44}
+                      size={40}
                       src={getMediaUrl(post.author?.avatar)}
                       icon={<UserOutlined />}
+                      className="bg-purple-600 text-white font-bold"
                     >
                       {post.author?.name?.[0] || "U"}
                     </Avatar>
                     <div>
-                      <Typography.Text strong>
+                      <div className="font-semibold text-gray-900">
                         {post.author?.name}
-                      </Typography.Text>
-                      <div className="post-meta">
-                        {new Date(post.createdAt).toLocaleString("vi-VN")} ·{" "}
-                        {post.visibility === "friends" ? "👥 Bạn bè" : post.visibility === "private" ? "🔒 Chỉ mình tôi" : "🌐 Công khai"}
-                        {post.isPinned && <span className="ml-2 font-semibold text-purple-600">📌 Đã ghim</span>}
+                        {post.group && (
+                          <span className="text-purple-600 ml-2">
+                            in {post.group.name}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {new Date(post.createdAt).toLocaleString("vi-VN")}
                       </div>
                     </div>
-                  </Space>
+                  </div>
                   <Dropdown menu={renderPostMenu(post)} trigger={["click"]}>
                     <Button
                       shape="circle"
                       type="text"
-                      icon={<EllipsisOutlined />}
+                      icon={<EllipsisOutlined className="text-gray-500" />}
                     />
                   </Dropdown>
                 </div>
 
-                <Typography.Paragraph className="post-content">
+                {/* Post Content */}
+                <Typography.Paragraph className="post-content text-gray-800 mb-3">
                   {renderPostContent(post.content)}
                 </Typography.Paragraph>
 
+                {/* Shared Post */}
+                {post.sharedPost && (
+                  <div
+                    className="border border-gray-200 rounded-lg p-3 mb-3 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                    onClick={() => {
+                      const sp = post.sharedPost;
+                      const groupId = sp.group?._id || sp.group;
+                      if (groupId) {
+                        navigate(`/groups/${groupId}?postId=${sp._id}`);
+                      } else {
+                        navigate(`/?postId=${sp._id}`);
+                      }
+                    }}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <Avatar
+                        size={24}
+                        src={getMediaUrl(post.sharedPost.author?.avatar)}
+                        icon={<UserOutlined />}
+                      >
+                        {post.sharedPost.author?.name?.[0] || "U"}
+                      </Avatar>
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-sm leading-tight">
+                          {post.sharedPost.author?.name}
+                          {post.sharedPost.group?.name && (
+                            <span className="text-purple-600 font-normal">
+                              {" "}trong{" "}
+                              <span className="font-semibold">{post.sharedPost.group.name}</span>
+                            </span>
+                          )}
+                        </span>
+                        {post.sharedPost.createdAt && (
+                          <span className="text-xs text-gray-400 leading-tight">
+                            {new Date(post.sharedPost.createdAt).toLocaleString("vi-VN")}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <Typography.Paragraph className="text-gray-800 mb-2">
+                      {renderPostContent(post.sharedPost.content)}
+                    </Typography.Paragraph>
+                    {normalizePostMedia(post.sharedPost.media).length ? (
+                      <div className="post-media-grid">
+                        {normalizePostMedia(post.sharedPost.media).map((item, idx) => {
+                          const src = getMediaUrl(item.url);
+                          return item.type === "video" ? (
+                            <video
+                              key={`${src}-${idx}`}
+                              className="post-media-item rounded-lg"
+                              controls
+                              src={src}
+                            />
+                          ) : (
+                            <Image
+                              key={`${src}-${idx}`}
+                              className="post-media-item rounded-lg"
+                              src={src}
+                              alt={item.originalName || "post media"}
+                            />
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
+                {/* Post Hashtags */}
                 {post.hashtags?.length ? (
-                  <Space wrap className="post-tags">
+                  <div className="flex flex-wrap gap-2 mb-3">
                     {post.hashtags.map((tag) => (
-                      <Tag key={tag} color="blue">
+                      <Tag key={tag} color="blue" className="m-0">
                         #{tag}
                       </Tag>
                     ))}
-                  </Space>
+                  </div>
                 ) : null}
 
-                {normalizePostMedia(post.media).length ? (
-                  <div className="post-media-grid">
+                {/* Post Media (only if not a shared post, or if the share has its own media?) */}
+                {!post.sharedPost && normalizePostMedia(post.media).length ? (
+                  <div className="post-media-grid mb-3">
                     {normalizePostMedia(post.media).map((item, idx) => {
                       const src = getMediaUrl(item.url);
                       return item.type === "video" ? (
                         <video
                           key={`${src}-${idx}`}
-                          className="post-media-item"
+                          className="post-media-item rounded-lg"
                           controls
                           src={src}
                         />
                       ) : (
                         <Image
                           key={`${src}-${idx}`}
-                          className="post-media-item"
+                          className="post-media-item rounded-lg"
                           src={src}
                           alt={item.originalName || "post media"}
                         />
@@ -1183,67 +1117,20 @@ const HomePage = () => {
                   </div>
                 ) : null}
 
-                {post.sharedPost ? (
-                  <div
-                    className="shared-post"
-                    style={{ cursor: "pointer" }}
-                    title="Xem bài viết gốc"
-                    onClick={() => {
-                      const origId = post.sharedPost._id;
-                      const hasIt = posts.some((p) => p._id === origId);
-                      if (hasIt) {
-                        setHighlightedPostId(origId);
-                        scrollToPostTarget(origId, null);
-                        setTimeout(() => setHighlightedPostId(""), 3500);
-                      } else {
-                        getPostByIdApi(origId).then((res) => {
-                          if (res?.EC === 0) {
-                            setPosts((prev) => [res.data, ...prev.filter((p) => p._id !== origId)]);
-                            setHighlightedPostId(origId);
-                            scrollToPostTarget(origId, null);
-                            setTimeout(() => setHighlightedPostId(""), 3500);
-                          } else {
-                            message.error("Không thể mở bài viết gốc");
-                          }
-                        });
-                      }
-                    }}
-                  >
-                    <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>
-                      🔗 Bài gốc của {post.sharedPost.author?.name}
-                    </Typography.Text>
-                    <Typography.Paragraph className="mb-0">
-                      {renderPostContent(post.sharedPost.content)}
-                    </Typography.Paragraph>
-                    {post.sharedPost.media?.length > 0 && (
-                      <div style={{ marginTop: 8, borderRadius: 8, overflow: "hidden", maxHeight: 160 }}>
-                        <img
-                          src={getMediaUrl(post.sharedPost.media[0])}
-                          alt=""
-                          style={{ width: "100%", objectFit: "cover", maxHeight: 160 }}
-                        />
-                      </div>
-                    )}
-                    <div style={{ marginTop: 6, fontSize: 12, color: "#7F00FD", fontWeight: 600 }}>
-                      Nhấn để xem bài gốc →
-                    </div>
+                {/* Post Stats */}
+                <div className="flex items-center justify-between text-gray-500 text-sm mb-3 pb-3 border-b border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <span className="flex items-center gap-1">
+                      👍 {post.stats?.reactions || 0}
+                    </span>
                   </div>
-                ) : null}
-
-                <div className="post-stats">
-                  <span>
-                    <LikeFilled
-                      className={post.myReaction ? "active-like" : ""}
-                    />{" "}
-                    {post.stats?.reactions || 0} reaction
-                  </span>
-                  <span>
-                    {post.stats?.comments || 0} bình luận ·{" "}
-                    {post.stats?.shares || 0} chia sẻ
-                  </span>
+                  <div>
+                    {post.stats?.comments || 0} bình luận · {post.stats?.shares || 0} chia sẻ
+                  </div>
                 </div>
 
-                <div className="post-actions">
+                {/* Post Actions */}
+                <div className="flex items-center justify-around py-2">
                   <ReactionPicker
                     myReaction={post.myReaction}
                     onReact={(type) => handleReact(post._id, type)}
@@ -1251,23 +1138,8 @@ const HomePage = () => {
                   <Button
                     type="text"
                     icon={<CommentOutlined />}
-                    onClick={() => {
-                      setFocusedCommentPostId(post._id);
-                      setTimeout(() => {
-                        const el = commentInputRefs.current[post._id];
-                        if (el) {
-                          el.focus?.();
-                          el.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
-                        }
-                      }, 80);
-                    }}
-                  >
-                    Like
-                  </Button>
-                  <Button
-                    type="text"
-                    icon={<CommentOutlined />}
                     onClick={() => setCommentModalPostId(post._id)}
+                    className="flex-1 justify-center"
                   >
                     Bình luận
                   </Button>
@@ -1275,140 +1147,11 @@ const HomePage = () => {
                     type="text"
                     icon={<RetweetOutlined />}
                     onClick={() => handleShare(post._id)}
+                    className="flex-1 justify-center"
                   >
                     Chia sẻ
                   </Button>
                 </div>
-
-                <div className="comment-box">
-                  <Avatar size={32} src={user?.avatar} icon={<UserOutlined />}>
-                    {displayName[0]}
-                  </Avatar>
-                  <Space.Compact
-                    className="comment-input"
-                    style={focusedCommentPostId === post._id ? {
-                      borderRadius: 20,
-                      boxShadow: "0 0 0 2px rgba(127,0,253,.35)",
-                      transition: "box-shadow .2s",
-                    } : { transition: "box-shadow .2s" }}
-                  >
-                    <MentionInput
-                      type="input"
-                      value={commentDrafts[post._id] || ""}
-                      onChange={(event) =>
-                        setCommentDrafts((prev) => ({
-                          ...prev,
-                          [post._id]: event.target.value,
-                        }))
-                      }
-                      onPressEnter={(raw) => handleComment(post._id, raw)}
-                      placeholder="Viết bình luận..."
-                      inputRef={(el) => { commentInputRefs.current[post._id] = el; }}
-                      onFocus={() => setFocusedCommentPostId(post._id)}
-                      onBlur={() => setFocusedCommentPostId(null)}
-                    />
-                    <Button onClick={() => handleComment(post._id)}>Gửi</Button>
-                  </Space.Compact>
-                </div>
-
-                <List
-                  className="comment-list"
-                  dataSource={post.comments || []}
-                  locale={{ emptyText: "Chưa có bình luận" }}
-                  renderItem={(comment) => (
-                    <List.Item
-                      id={`comment-${comment._id}`}
-                      className={`comment-item ${
-                        highlightedCommentId === comment._id
-                          ? "comment-item-highlight"
-                          : ""
-                      }`}
-                    >
-                      <div className="comment-thread">
-                        <Space
-                          align="start"
-                          style={{ cursor: "pointer" }}
-                          onClick={() =>
-                            navigate(`/profile/${comment.author?._id}`)
-                          }
-                        >
-                          <Avatar
-                            size={32}
-                            src={comment.author?.avatar}
-                            icon={<UserOutlined />}
-                          >
-                            {comment.author?.name?.[0] || "U"}
-                          </Avatar>
-                          <div className="comment-bubble">
-                            <Typography.Text strong>
-                              {comment.author?.name}
-                            </Typography.Text>
-                            <Typography.Paragraph className="mb-0">
-                              {renderPostContent(comment.content)}
-                            </Typography.Paragraph>
-                          </div>
-                        </Space>
-
-                        <div className="reply-area">
-                          {(comment.replies || []).map((reply) => (
-                            <Space
-                              key={reply._id}
-                              id={`comment-${reply._id}`}
-                              align="start"
-                              className={`reply-row ${
-                                highlightedCommentId === reply._id
-                                  ? "comment-item-highlight"
-                                  : ""
-                              }`}
-                              style={{ cursor: "pointer" }}
-                              onClick={() =>
-                                navigate(`/profile/${reply.author?._id}`)
-                              }
-                            >
-                              <Avatar
-                                size={26}
-                                src={reply.author?.avatar}
-                                icon={<UserOutlined />}
-                              >
-                                {reply.author?.name?.[0] || "U"}
-                              </Avatar>
-                              <div className="reply-bubble">
-                                <Typography.Text strong>
-                                  {reply.author?.name}
-                                </Typography.Text>
-                                <Typography.Paragraph className="mb-0">
-                                  {renderPostContent(reply.content)}
-                                </Typography.Paragraph>
-                              </div>
-                            </Space>
-                          ))}
-                          <Space.Compact className="reply-input">
-                            <MentionInput
-                              type="input"
-                              value={replyDrafts[comment._id] || ""}
-                              onChange={(event) =>
-                                setReplyDrafts((prev) => ({
-                                  ...prev,
-                                  [comment._id]: event.target.value,
-                                }))
-                              }
-                              onPressEnter={(raw) =>
-                                handleReply(post._id, comment._id, raw)
-                              }
-                              placeholder="Trả lời bình luận..."
-                            />
-                            <Button
-                              onClick={() => handleReply(post._id, comment._id)}
-                            >
-                              Trả lời
-                            </Button>
-                          </Space.Compact>
-                        </div>
-                      </div>
-                    </List.Item>
-                  )}
-                />
-                {renderCommentList(post, { preview: true })}
               </Card>
             ))
           ) : (

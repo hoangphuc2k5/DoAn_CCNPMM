@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useSelector } from "react-redux";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Avatar,
   Input,
@@ -47,6 +47,9 @@ import {
   markSeenApi,
   getRelationshipsApi,
   blockUserApi,
+  unblockUserApi,
+  restrictUserApi,
+  unrestrictUserApi,
   reportUserApi,
 } from "../util/api";
 
@@ -84,11 +87,38 @@ const formatTimeAgo = (dateStr) => {
   return `${diffDay}d`;
 };
 
+const getInitial = (value, fallback = "?") => {
+  if (value == null) return fallback;
+  const text = String(value).trim();
+  if (!text) return fallback;
+  return text[0].toUpperCase();
+};
+
+const getConvId = (value) => (value?._id || value)?.toString();
+const getMessageId = (value) => (value?._id || value?.id || value)?.toString();
+
+const normalizeRecalledMessage = (recalledMsg, existingMsg) => ({
+  ...existingMsg,
+  ...recalledMsg,
+  isRecalled: true,
+  content: recalledMsg?.content || "Tin nhắn đã bị thu hồi",
+  attachments: [],
+  sticker: "",
+});
+
+const applyUnreadSummary = (conversations, summary) => {
+  if (!summary?.byConversation) return conversations;
+  return conversations.map((conv) => ({
+    ...conv,
+    unreadCount: summary.byConversation[getConvId(conv)] || 0,
+  }));
+};
+
 const ChatPage = () => {
   const currentUser = useSelector((state) => state.auth.user);
-  const { socket, onlineUsers } = useSocket();
+  const { socket, onlineUsers, chatUnread, refreshChatUnread, subscribeMessageRecalled, subscribeBlockStatusChanged, subscribeRestrictStatusChanged } =
+    useSocket();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
 
   const getConvDetails = (conv) => {
     if (conv.isGroup) {
@@ -96,17 +126,53 @@ const ChatPage = () => {
         name: conv.name,
         avatar: conv.avatar || "",
         isOnline: false,
+        statusText: `${conv.participants.length} thành viên`,
       };
     }
 
     const otherUser = conv.participants.find((p) => p._id !== currentUser?._id);
     const isOnline = otherUser ? onlineUsers.includes(otherUser._id.toString()) : false;
 
+    // Get status information from participantsWithStatus if available
+    let isBlockedByMe = false;
+    let isBlockedMe = false;
+    let isRestrictedByMe = false;
+    let isRestrictedMe = false;
+    
+    if (conv.participantsWithStatus) {
+      const otherUserStatus = conv.participantsWithStatus.find((p) => p._id !== currentUser?._id);
+      if (otherUserStatus) {
+        isBlockedByMe = otherUserStatus.isBlockedByMe || false;
+        isBlockedMe = otherUserStatus.isBlockedMe || false;
+        isRestrictedByMe = otherUserStatus.isRestrictedByMe || false;
+        isRestrictedMe = otherUserStatus.isRestrictedMe || false;
+      }
+    }
+
+    // Determine status text based on priority: blocked → restricted → online/offline
+    let statusText = "Ngoại tuyến";
+    if (isBlockedByMe) {
+      statusText = "Đã chặn";
+    } else if (isBlockedMe) {
+      statusText = "Bị chặn";
+    } else if (isRestrictedByMe) {
+      statusText = "Đang hạn chế";
+    } else if (isRestrictedMe) {
+      statusText = "Bạn đang bị hạn chế";
+    } else if (isOnline) {
+      statusText = "Đang hoạt động";
+    }
+
     return {
       name: otherUser ? otherUser.name : "Tài khoản Tegram",
       avatar: otherUser ? otherUser.avatar : "",
       isOnline,
       userId: otherUser?._id,
+      isBlockedByMe,
+      isBlockedMe,
+      isRestrictedByMe,
+      isRestrictedMe,
+      statusText,
     };
   };
 
@@ -126,6 +192,7 @@ const ChatPage = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [typingUsers, setTypingUsers] = useState([]);
   const [friends, setFriends] = useState([]);
+  const [blockedUsers, setBlockedUsers] = useState(new Set()); // Track blocked users
   const [showRightPanel, setShowRightPanel] = useState(true);
 
   // Group creation modal state
@@ -141,14 +208,130 @@ const ChatPage = () => {
 
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const selectedConvRef = useRef(null);
+
+  useEffect(() => {
+    selectedConvRef.current = selectedConv;
+  }, [selectedConv]);
+
+  const applyRecalledMessageUpdate = useCallback((recalledMsg) => {
+    const recalledId = getMessageId(recalledMsg);
+    if (!recalledId) return;
+
+    setMessages((prev) => {
+      let changed = false;
+      const next = prev.map((m) => {
+        if (getMessageId(m) !== recalledId) return m;
+        changed = true;
+        return normalizeRecalledMessage(recalledMsg, m);
+      });
+      return changed ? next : prev;
+    });
+
+    setConversations((prev) =>
+      prev.map((c) => {
+        if (!c.lastMessage || getMessageId(c.lastMessage) !== recalledId) return c;
+        return {
+          ...c,
+          lastMessage: normalizeRecalledMessage(recalledMsg, c.lastMessage),
+        };
+      })
+    );
+  }, []);
+
+  const appendSentMessage = useCallback((message) => {
+    if (!message) return;
+
+    const msgConvId = getConvId(message.conversation);
+    const messageId = getMessageId(message);
+    const activeConv = selectedConvRef.current;
+    const isCurrent = activeConv && getConvId(activeConv) === msgConvId;
+
+    if (isCurrent && messageId) {
+      setMessages((prev) => {
+        if (prev.some((m) => getMessageId(m) === messageId)) return prev;
+        return [...prev, message];
+      });
+    }
+
+    setConversations((prev) => {
+      const index = prev.findIndex((c) => getConvId(c) === msgConvId);
+      if (index === -1) return prev;
+
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        lastMessage: message,
+        updatedAt: message.createdAt || new Date().toISOString(),
+      };
+      return updated.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!subscribeMessageRecalled) return undefined;
+    return subscribeMessageRecalled(applyRecalledMessageUpdate);
+  }, [subscribeMessageRecalled, applyRecalledMessageUpdate]);
+
+  useEffect(() => {
+    if (!subscribeBlockStatusChanged) return undefined;
+    const handleBlockStatusChanged = async (data) => {
+      // data: { blockerId, targetId, isBlocked }
+      // Refresh conversations to get updated block status
+      const result = await getConversationsApi();
+      if (result && result.EC === 0 && Array.isArray(result.data)) {
+        setConversations(
+          result.data.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+        );
+        // If current conversation is affected, update it too
+        if (selectedConv && (selectedConv._id === data.blockerId || selectedConv._id === data.targetId)) {
+          const updatedConv = result.data.find((c) => c._id === selectedConv._id);
+          if (updatedConv) {
+            setSelectedConv(updatedConv);
+          }
+        }
+      }
+    };
+    return subscribeBlockStatusChanged(handleBlockStatusChanged);
+  }, [subscribeBlockStatusChanged, selectedConv]);
+
+  useEffect(() => {
+    if (!subscribeRestrictStatusChanged) return undefined;
+    const handleRestrictStatusChanged = async (data) => {
+      // data: { restrictorId, targetId, isRestricted }
+      // Refresh conversations to get updated restrict status
+      const result = await getConversationsApi();
+      if (result && result.EC === 0 && Array.isArray(result.data)) {
+        setConversations(
+          result.data.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+        );
+        // If current conversation is affected, update it too
+        if (selectedConv && (selectedConv._id === data.restrictorId || selectedConv._id === data.targetId)) {
+          const updatedConv = result.data.find((c) => c._id === selectedConv._id);
+          if (updatedConv) {
+            setSelectedConv(updatedConv);
+          }
+        }
+      }
+    };
+    return subscribeRestrictStatusChanged(handleRestrictStatusChanged);
+  }, [subscribeRestrictStatusChanged, selectedConv]);
+
+  useEffect(() => {
+    setConversations((prev) => applyUnreadSummary(prev, chatUnread));
+  }, [chatUnread]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+    });
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, typingUsers]);
+    if (loadingMsgs === false) {
+      scrollToBottom();
+    }
+  }, [messages, typingUsers, loadingMsgs]);
 
   // Initial Fetches
   useEffect(() => {
@@ -161,72 +344,65 @@ const ChatPage = () => {
     if (!socket) return;
 
     const handleReceiveMessage = (message) => {
-      const isCurrent =
-        selectedConv &&
-        (message.conversation === selectedConv._id ||
-          message.conversation._id === selectedConv._id);
+      const activeConv = selectedConvRef.current;
+      const msgConvId = getConvId(message.conversation);
+      const senderId = getConvId(message.sender);
+      const myId = getConvId(currentUser);
+      const isCurrent = activeConv && getConvId(activeConv) === msgConvId;
+      const isFromMe = senderId === myId;
 
       if (isCurrent) {
         setMessages((prev) => {
-          if (prev.some((m) => m._id === message._id)) return prev;
+          if (prev.some((m) => getMessageId(m) === getMessageId(message))) return prev;
           return [...prev, message];
         });
-        markSeenApi(selectedConv._id);
-        socket.emit("message_seen", selectedConv._id);
+        markSeenApi(activeConv._id).then(() => refreshChatUnread());
+        socket.emit("message_seen", {
+          conversationId: msgConvId,
+          userId: myId,
+        });
       }
 
       setConversations((prev) => {
-        const convId = message.conversation._id || message.conversation;
-        const index = prev.findIndex((c) => c._id === convId);
+        const index = prev.findIndex((c) => getConvId(c) === msgConvId);
         if (index !== -1) {
           const updated = [...prev];
+          const prevUnread = updated[index].unreadCount || 0;
+          const alreadyHasMessage = updated[index].lastMessage?._id === message._id;
           updated[index] = {
             ...updated[index],
             lastMessage: message,
             updatedAt: message.createdAt,
+            unreadCount: alreadyHasMessage || isCurrent || isFromMe
+              ? prevUnread
+              : prevUnread + 1,
           };
           return updated.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-        } else {
-          fetchConversations();
-          return prev;
         }
+        fetchConversations();
+        return prev;
       });
     };
 
-    const handleMessageRecalled = (recalledMsg) => {
-      const isCurrent =
-        selectedConv &&
-        (recalledMsg.conversation === selectedConv._id ||
-          recalledMsg.conversation._id === selectedConv._id);
-
-      if (isCurrent) {
-        setMessages((prev) =>
-          prev.map((m) => (m._id === recalledMsg._id ? recalledMsg : m))
-        );
-      }
-
-      setConversations((prev) =>
-        prev.map((c) => {
-          if (c.lastMessage && c.lastMessage._id === recalledMsg._id) {
-            return { ...c, lastMessage: recalledMsg };
-          }
-          return c;
-        })
-      );
-    };
-
     const handleMessageSeen = ({ conversationId, userId, seenAt }) => {
-      if (selectedConv && selectedConv._id === conversationId) {
+      const activeConv = selectedConvRef.current;
+      if (activeConv && getConvId(activeConv) === getConvId(conversationId)) {
         setMessages((prev) =>
           prev.map((m) => {
-            const isSender = m.sender._id === userId;
+            const isSender = m.sender?._id === userId;
             const alreadySeen = m.seenBy.some(
-              (s) => (s.user._id || s.user) === userId
+              (s) => ((s.user && typeof s.user === "object" ? s.user._id : s.user) || "") === userId
             );
             if (!isSender && !alreadySeen) {
               return {
                 ...m,
-                seenBy: [...m.seenBy, { user: userId, seenAt }],
+                seenBy: [
+                  ...m.seenBy,
+                  {
+                    user: { _id: userId, name: "", avatar: "" },
+                    seenAt,
+                  },
+                ],
               };
             }
             return m;
@@ -236,7 +412,12 @@ const ChatPage = () => {
     };
 
     const handleTyping = ({ conversationId, userId, userName }) => {
-      if (selectedConv && selectedConv._id === conversationId && userId !== currentUser._id) {
+      const activeConv = selectedConvRef.current;
+      if (
+        activeConv &&
+        getConvId(activeConv) === getConvId(conversationId) &&
+        userId !== currentUser._id
+      ) {
         setTypingUsers((prev) => {
           if (!prev.some((u) => u.userId === userId)) {
             return [...prev, { userId, userName }];
@@ -247,14 +428,17 @@ const ChatPage = () => {
     };
 
     const handleStopTyping = ({ conversationId, userId }) => {
-      if (selectedConv && selectedConv._id === conversationId) {
+      const activeConv = selectedConvRef.current;
+      if (activeConv && getConvId(activeConv) === getConvId(conversationId)) {
         setTypingUsers((prev) => prev.filter((u) => u.userId !== userId));
       }
     };
 
     const handleConversationUpdated = ({ conversationId, lastMessage }) => {
+      const msgConvId = getConvId(conversationId);
+
       setConversations((prev) => {
-        const index = prev.findIndex((c) => c._id === conversationId);
+        const index = prev.findIndex((c) => getConvId(c) === msgConvId);
         if (index !== -1) {
           const updated = [...prev];
           updated[index] = {
@@ -263,15 +447,13 @@ const ChatPage = () => {
             updatedAt: lastMessage.createdAt,
           };
           return updated.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-        } else {
-          fetchConversations();
-          return prev;
         }
+        fetchConversations();
+        return prev;
       });
     };
 
     socket.on("receive_message", handleReceiveMessage);
-    socket.on("message_recalled", handleMessageRecalled);
     socket.on("message_seen", handleMessageSeen);
     socket.on("typing", handleTyping);
     socket.on("stop_typing", handleStopTyping);
@@ -279,26 +461,28 @@ const ChatPage = () => {
 
     return () => {
       socket.off("receive_message", handleReceiveMessage);
-      socket.off("message_recalled", handleMessageRecalled);
       socket.off("message_seen", handleMessageSeen);
       socket.off("typing", handleTyping);
       socket.off("stop_typing", handleStopTyping);
       socket.off("conversation_updated", handleConversationUpdated);
     };
-  }, [socket, selectedConv, currentUser]);
+  }, [socket, currentUser, refreshChatUnread]);
 
   // Join/leave rooms
   useEffect(() => {
     if (!socket || !selectedConv) return;
 
-    socket.emit("join_room", selectedConv._id);
-    markSeenApi(selectedConv._id);
-    socket.emit("message_seen", selectedConv._id);
+    socket.emit("join_room", selectedConv._id.toString());
+    markSeenApi(selectedConv._id).then(() => refreshChatUnread());
+    socket.emit("message_seen", {
+      conversationId: selectedConv._id.toString(),
+      userId: currentUser._id.toString(),
+    });
 
     return () => {
-      socket.emit("leave_room", selectedConv._id);
+      socket.emit("leave_room", selectedConv._id.toString());
     };
-  }, [socket, selectedConv?._id]);
+  }, [socket, selectedConv?._id, currentUser?._id, refreshChatUnread]);
 
   // APIs fetchers
   const fetchConversations = async () => {
@@ -316,6 +500,11 @@ const ChatPage = () => {
     const res = await getRelationshipsApi();
     if (res && res.EC === 0) {
       setFriends(res.data?.friends || []);
+      // Extract blocked user IDs
+      const blockedIds = new Set(
+        (res.data?.blockedUsers || []).map(user => (user._id || user).toString())
+      );
+      setBlockedUsers(blockedIds);
     }
   };
 
@@ -335,7 +524,11 @@ const ChatPage = () => {
     setTypingUsers([]);
     setMessageInput("");
     setFileList([]);
+    setConversations((prev) =>
+      prev.map((c) => (getConvId(c) === getConvId(conv) ? { ...c, unreadCount: 0 } : c))
+    );
     fetchMessages(conv._id);
+    markSeenApi(conv._id).then(() => refreshChatUnread());
   };
 
   // Online friends list
@@ -354,19 +547,85 @@ const ChatPage = () => {
         const details = getConvDetails(c);
         return details.name.toLowerCase().includes(searchQuery.toLowerCase());
       });
-  }, [conversations, activeTab, searchQuery]);
+  }, [conversations, activeTab, searchQuery, currentUser, onlineUsers]);
 
-  useEffect(() => {
-    const targetConversationId = searchParams.get("conversationId");
-    if (!targetConversationId || !conversations.length) return;
-    if (selectedConv?._id === targetConversationId) return;
+  const personalUnread = useMemo(
+    () => conversations.filter((c) => !c.isGroup).reduce((sum, c) => sum + (c.unreadCount || 0), 0),
+    [conversations]
+  );
 
-    const targetConversation = conversations.find((conv) => conv._id === targetConversationId);
-    if (targetConversation) {
-      selectConversation(targetConversation);
-      setSearchParams({}, { replace: true });
+  const groupUnread = useMemo(
+    () => conversations.filter((c) => c.isGroup).reduce((sum, c) => sum + (c.unreadCount || 0), 0),
+    [conversations]
+  );
+
+  const normalizePastedFile = (file, index = 0) => {
+    if (file.name) return file;
+    const ext = (file.type || "image/png").split("/")[1]?.replace("jpeg", "jpg") || "bin";
+    return new File([file], `paste-${Date.now()}-${index}.${ext}`, {
+      type: file.type || "application/octet-stream",
+    });
+  };
+
+  const getClipboardFiles = (clipboardData) => {
+    const files = [];
+    if (!clipboardData?.items) return files;
+
+    for (const item of clipboardData.items) {
+      if (item.kind !== "file") continue;
+      const file = item.getAsFile();
+      if (file) files.push(normalizePastedFile(file, files.length));
     }
-  }, [conversations, searchParams, selectedConv?._id]);
+    return files;
+  };
+
+  const sendFilesMessage = async (files, caption = "") => {
+    if (!selectedConv || !files.length) return false;
+
+    const hideLoading = antdMessage.loading("Đang gửi tệp tin...", 0);
+    try {
+      const formData = new FormData();
+      formData.append("content", caption);
+      files.forEach((file) => {
+        formData.append("attachments", file);
+      });
+
+      const res = await sendMessageApi(selectedConv._id, formData);
+      hideLoading();
+
+      if (res && res.EC === 0) {
+        appendSentMessage(res.data);
+        setMessageInput("");
+        setFileList([]);
+        return true;
+      }
+
+      antdMessage.error(res?.EM || "Gửi tin nhắn thất bại");
+      return false;
+    } catch (error) {
+      hideLoading();
+      console.error(error);
+      antdMessage.error("Đã xảy ra lỗi khi gửi tin nhắn");
+      return false;
+    }
+  };
+
+  const handlePaste = async (e) => {
+    if (!selectedConv) return;
+
+    const pastedFiles = getClipboardFiles(e.clipboardData);
+    if (!pastedFiles.length) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (isTyping && socket) {
+      setIsTyping(false);
+      socket.emit("stop_typing", { conversationId: selectedConv._id });
+    }
+
+    await sendFilesMessage(pastedFiles, messageInput.trim());
+  };
 
   // Input actions
   const handleInputChange = (e) => {
@@ -389,6 +648,13 @@ const ChatPage = () => {
     if (!selectedConv) return;
     if (!messageInput.trim() && fileList.length === 0 && !payloadOverride.sticker) return;
 
+    // Check if user is blocked (either direction)
+    const details = getConvDetails(selectedConv);
+    if (details.isBlockedByMe || details.isBlockedMe) {
+      antdMessage.error("Bạn không thể gửi tin nhắn vì đã bị chặn");
+      return;
+    }
+
     if (isTyping && socket) {
       setIsTyping(false);
       socket.emit("stop_typing", { conversationId: selectedConv._id });
@@ -397,14 +663,12 @@ const ChatPage = () => {
     try {
       let res;
       if (fileList.length > 0) {
-        const formData = new FormData();
-        formData.append("content", messageInput);
-        fileList.forEach((file) => {
-          formData.append("attachments", file.originFileObj || file);
-        });
-        const hideLoading = antdMessage.loading("Đang gửi tệp tin...", 0);
-        res = await sendMessageApi(selectedConv._id, formData);
-        hideLoading();
+        const sent = await sendFilesMessage(
+          fileList.map((file) => file.originFileObj || file),
+          messageInput
+        );
+        if (sent) return;
+        return;
       } else {
         const payload = {
           content: payloadOverride.sticker ? "" : messageInput,
@@ -415,6 +679,7 @@ const ChatPage = () => {
       }
 
       if (res && res.EC === 0) {
+        appendSentMessage(res.data);
         setMessageInput("");
         setFileList([]);
       } else {
@@ -437,6 +702,7 @@ const ChatPage = () => {
   const handleRecallMessage = async (messageId) => {
     const res = await recallMessageApi(messageId);
     if (res && res.EC === 0) {
+      applyRecalledMessageUpdate(res.data);
       antdMessage.success("Tin nhắn đã được thu hồi");
     } else {
       antdMessage.error(res?.EM || "Không thể thu hồi tin nhắn");
@@ -497,7 +763,6 @@ const ChatPage = () => {
     }
   };
 
-  // Block & Report functionality inside Right Panel
   const handleBlockUser = (userId) => {
     Modal.confirm({
       title: "Chặn người dùng này?",
@@ -510,10 +775,70 @@ const ChatPage = () => {
           const res = await blockUserApi(userId);
           if (res?.EC === 0) {
             antdMessage.success("Đã chặn người dùng");
+            // Add user to blocked set
+            setBlockedUsers(prev => new Set([...prev, userId.toString()]));
             fetchConversations();
             setSelectedConv(null);
           } else {
             antdMessage.error(res?.EM || "Lỗi chặn người dùng");
+          }
+        } catch (err) {
+          antdMessage.error("Không thể hoàn thành hành động");
+        }
+      },
+    });
+  };
+
+  const handleUnblockUser = (userId) => {
+    Modal.confirm({
+      title: "Bỏ chặn người dùng này?",
+      content: "Bạn sẽ có thể tương tác với người dùng này lại.",
+      okText: "Bỏ chặn",
+      cancelText: "Hủy",
+      onOk: async () => {
+        try {
+          const res = await unblockUserApi(userId);
+          if (res?.EC === 0) {
+            antdMessage.success("Đã bỏ chặn người dùng");
+            // Remove user from blocked set
+            setBlockedUsers(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(userId.toString());
+              return newSet;
+            });
+            fetchConversations();
+          } else {
+            antdMessage.error(res?.EM || "Lỗi bỏ chặn người dùng");
+          }
+        } catch (err) {
+          antdMessage.error("Không thể hoàn thành hành động");
+        }
+      },
+    });
+  };
+
+  const handleRestrictUser = (userId) => {
+    const details = getConvDetails(selectedConv);
+    const isRestricted = details.isRestrictedByMe;
+    
+    Modal.confirm({
+      title: isRestricted ? "Bỏ hạn chế người dùng này?" : "Hạn chế người dùng này?",
+      content: isRestricted 
+        ? "Người dùng này sẽ nhận lại thông báo từ tin nhắn của bạn."
+        : "Người dùng này sẽ không nhận bất kỳ thông báo nào từ tin nhắn của bạn. Họ vẫn có thể gửi và nhận tin nhắn bình thường.",
+      okText: isRestricted ? "Bỏ hạn chế" : "Hạn chế",
+      cancelText: "Hủy",
+      onOk: async () => {
+        try {
+          const res = isRestricted 
+            ? await unrestrictUserApi(userId)
+            : await restrictUserApi(userId);
+          
+          if (res?.EC === 0) {
+            antdMessage.success(isRestricted ? "Đã bỏ hạn chế người dùng" : "Đã hạn chế người dùng");
+            fetchConversations();
+          } else {
+            antdMessage.error(res?.EM || "Lỗi xử lý hạn chế");
           }
         } catch (err) {
           antdMessage.error("Không thể hoàn thành hành động");
@@ -698,7 +1023,16 @@ const ChatPage = () => {
       {/* Cột 1: Sidebar tin nhắn */}
       <div className="chat-sidebar">
         <div className="chat-sidebar-header">
-          <span className="chat-sidebar-title">Tin nhắn</span>
+          <span className="chat-sidebar-title">
+            Tin nhắn
+            {chatUnread.total > 0 && (
+              <Badge
+                count={chatUnread.total > 99 ? "99+" : chatUnread.total}
+                color="#FF3B30"
+                style={{ marginLeft: 8 }}
+              />
+            )}
+          </span>
           <Button
             type="text"
             shape="circle"
@@ -727,12 +1061,26 @@ const ChatPage = () => {
             className={`chat-tab-button ${activeTab === "personal" ? "active" : ""}`}
           >
             Cá nhân
+            {personalUnread > 0 && (
+              <Badge
+                count={personalUnread > 99 ? "99+" : personalUnread}
+                color="#FF3B30"
+                style={{ marginLeft: 6 }}
+              />
+            )}
           </button>
           <button
             onClick={() => setActiveTab("group")}
             className={`chat-tab-button ${activeTab === "group" ? "active" : ""}`}
           >
             Nhóm
+            {groupUnread > 0 && (
+              <Badge
+                count={groupUnread > 99 ? "99+" : groupUnread}
+                color="#FF3B30"
+                style={{ marginLeft: 6 }}
+              />
+            )}
           </button>
         </div>
 
@@ -746,7 +1094,7 @@ const ChatPage = () => {
                   <div key={f._id} className="online-user-item" onClick={() => handleStartNewChat(f._id)}>
                     <Badge dot status="success" offset={[-2, 32]}>
                       <Avatar src={getMediaUrl(f.avatar)} size={38}>
-                        {f.name[0].toUpperCase()}
+                        {getInitial(f.name)}
                       </Avatar>
                     </Badge>
                     <span className="online-user-name">{f.name.split(" ").pop()}</span>
@@ -788,12 +1136,8 @@ const ChatPage = () => {
               renderItem={(conv) => {
                 const details = getConvDetails(conv);
                 const isSelected = selectedConv && selectedConv._id === conv._id;
-                const hasUnread =
-                  conv.lastMessage &&
-                  conv.lastMessage.sender?._id !== currentUser?._id &&
-                  !conv.lastMessage.seenBy?.some(
-                    (s) => (s.user?._id || s.user) === currentUser?._id
-                  );
+                const unreadCount = conv.unreadCount || 0;
+                const hasUnread = unreadCount > 0;
 
                 return (
                   <List.Item
@@ -808,7 +1152,7 @@ const ChatPage = () => {
                           icon={conv.isGroup ? <TeamOutlined /> : null}
                           style={{ backgroundColor: isSelected ? "#ffffff" : "#7F00FD", color: isSelected ? "#7F00FD" : "#ffffff", fontWeight: "bold" }}
                         >
-                          {details.name[0].toUpperCase()}
+                          {getInitial(details.name)}
                         </Avatar>
                       </Badge>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -833,7 +1177,11 @@ const ChatPage = () => {
                               : "Chưa có tin nhắn"}
                           </span>
                           {hasUnread && (
-                            <Badge color="#7F00FD" status="processing" />
+                            <Badge
+                              count={unreadCount > 99 ? "99+" : unreadCount}
+                              color="#FF3B30"
+                              style={{ flexShrink: 0 }}
+                            />
                           )}
                         </div>
                       </div>
@@ -860,7 +1208,7 @@ const ChatPage = () => {
                     icon={selectedConv.isGroup ? <TeamOutlined /> : null}
                     style={{ backgroundColor: "#7F00FD", fontWeight: "bold" }}
                   >
-                    {getConvDetails(selectedConv).name[0].toUpperCase()}
+                    {getInitial(getConvDetails(selectedConv).name)}
                   </Avatar>
                 </Badge>
                 <div style={{ textAlign: "left" }}>
@@ -870,9 +1218,7 @@ const ChatPage = () => {
                   <span style={{ fontSize: 11, color: "#8c8c8c" }}>
                     {selectedConv.isGroup
                       ? `${selectedConv.participants.length} thành viên`
-                      : getConvDetails(selectedConv).isOnline
-                        ? "Đang hoạt động"
-                        : "Ngoại tuyến"}
+                      : getConvDetails(selectedConv).statusText}
                   </span>
                 </div>
               </div>
@@ -897,7 +1243,7 @@ const ChatPage = () => {
             </div>
 
             {/* Khung chứa các tin nhắn */}
-            <div className="chat-messages-scroll">
+            <div className="chat-messages-scroll" onPaste={handlePaste} tabIndex={0} style={{ outline: "none" }}>
               {loadingMsgs ? (
                 <div style={{ display: "flex", justifyContent: "center", padding: 24, margin: "auto" }}>
                   <Spin size="large" />
@@ -923,7 +1269,7 @@ const ChatPage = () => {
                           size={32}
                           style={{ marginTop: 2, backgroundColor: "#7F00FD", fontWeight: "bold" }}
                         >
-                          {msg.sender?.name?.[0].toUpperCase()}
+                          {getInitial(msg.sender?.name)}
                         </Avatar>
                       )}
                       <div style={{ display: "flex", flexDirection: "column", maxWidth: "100%", alignItems: isMyMsg ? "flex-end" : "flex-start" }}>
@@ -962,13 +1308,13 @@ const ChatPage = () => {
                         {index === messages.length - 1 && seenAvatars.length > 0 && (
                           <div style={{ display: "flex", gap: 3, marginTop: 4, justifyContent: isMyMsg ? "flex-end" : "flex-start" }}>
                             {seenAvatars.slice(0, 5).map((u) => (
-                              <Tooltip key={u._id} title={`${u.name} đã xem`}>
+                              <Tooltip key={u?._id || u?.toString?.()} title={`${u?.name || "Người dùng"} đã xem`}>
                                 <Avatar
-                                  src={getMediaUrl(u.avatar)}
+                                  src={getMediaUrl(u?.avatar)}
                                   size={14}
                                   style={{ border: "1px solid #ffffff", backgroundColor: "#7F00FD" }}
                                 >
-                                  {u.name[0].toUpperCase()}
+                                  {getInitial(u?.name)}
                                 </Avatar>
                               </Tooltip>
                             ))}
@@ -1003,13 +1349,39 @@ const ChatPage = () => {
             </div>
 
             {/* Input area */}
-            <div className="chat-input-panel">
+            <div className="chat-input-panel" onPaste={handlePaste}>
+              {/* Blocked Warning */}
+              {getConvDetails(selectedConv)?.isBlockedByMe && getConvDetails(selectedConv)?.isBlockedMe && (
+                <div style={{ padding: 12, backgroundColor: "#ffe4e1", border: "1px solid #ff6b6b", borderRadius: 8, marginBottom: 8, color: "#c92a2a", fontSize: 12, fontWeight: 500 }}>
+                  🚫 Bạn và người dùng này đã chặn lẫn nhau. Không thể nhắn tin hoặc tương tác.
+                </div>
+              )}
+              {getConvDetails(selectedConv)?.isBlockedByMe && !getConvDetails(selectedConv)?.isBlockedMe && (
+                <div style={{ padding: 12, backgroundColor: "#fff7e6", border: "1px solid #ffe7ba", borderRadius: 8, marginBottom: 8, color: "#d46b08", fontSize: 12, fontWeight: 500 }}>
+                  ⚠️ Bạn đã chặn người dùng này. Bạn không thể nhắn tin hoặc tương tác với họ.
+                </div>
+              )}
+              {!getConvDetails(selectedConv)?.isBlockedByMe && getConvDetails(selectedConv)?.isBlockedMe && (
+                <div style={{ padding: 12, backgroundColor: "#fff7e6", border: "1px solid #ffe7ba", borderRadius: 8, marginBottom: 8, color: "#d46b08", fontSize: 12, fontWeight: 500 }}>
+                  ⚠️ Bạn đã bị chặn bởi người dùng này. Bạn không thể nhắn tin hoặc tương tác với họ.
+                </div>
+              )}
+              
               {/* File list Staged Preview */}
               {fileList.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: 8, backgroundColor: "#f9fafb", borderRadius: 8 }}>
-                  {fileList.map((file, idx) => (
-                    <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", backgroundColor: "#ffffff", borderRadius: 6, fontSize: 11, border: "1px solid #edf0f4" }}>
-                      <FileOutlined style={{ color: "#7F00FD" }} />
+                  {fileList.map((file, idx) => {
+                    const rawFile = file.originFileObj || file;
+                    const isImage = rawFile.type?.startsWith("image/");
+                    const previewUrl = isImage ? URL.createObjectURL(rawFile) : null;
+
+                    return (
+                    <div key={file.uid || idx} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", backgroundColor: "#ffffff", borderRadius: 6, fontSize: 11, border: "1px solid #edf0f4" }}>
+                      {previewUrl ? (
+                        <img src={previewUrl} alt={file.name} style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4 }} />
+                      ) : (
+                        <FileOutlined style={{ color: "#7F00FD" }} />
+                      )}
                       <span className="truncate" style={{ maxWidth: 120 }}>{file.name}</span>
                       <Button
                         type="text"
@@ -1020,7 +1392,8 @@ const ChatPage = () => {
                         onClick={() => setFileList((prev) => prev.filter((_, i) => i !== idx))}
                       />
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -1056,9 +1429,10 @@ const ChatPage = () => {
 
                 {/* Chat Input Field */}
                 <Input
-                  placeholder="Nhập tin nhắn..."
+                  placeholder="Nhập tin nhắn....."
                   value={messageInput}
                   onChange={handleInputChange}
+                  onPaste={handlePaste}
                   onPressEnter={() => handleSendMessage()}
                   className="chat-text-input"
                   size="large"
@@ -1072,7 +1446,7 @@ const ChatPage = () => {
                   icon={<SendOutlined style={{ fontSize: 16 }} />}
                   onClick={() => handleSendMessage()}
                   className="chat-send-btn"
-                  disabled={!messageInput.trim() && fileList.length === 0}
+                  disabled={(!messageInput.trim() && fileList.length === 0) || getConvDetails(selectedConv)?.isBlockedByMe || getConvDetails(selectedConv)?.isBlockedMe}
                 />
               </div>
             </div>
@@ -1103,7 +1477,7 @@ const ChatPage = () => {
             icon={selectedConv.isGroup ? <TeamOutlined /> : null}
             style={{ backgroundColor: "#7F00FD", fontWeight: "bold" }}
           >
-            {getConvDetails(selectedConv).name[0].toUpperCase()}
+            {getInitial(getConvDetails(selectedConv).name)}
           </Avatar>
           <h3 className="right-sidebar-name">
             {getConvDetails(selectedConv).name}
@@ -1111,9 +1485,7 @@ const ChatPage = () => {
           <div className="right-sidebar-status">
             {selectedConv.isGroup
               ? `${selectedConv.participants.length} thành viên`
-              : getConvDetails(selectedConv).isOnline
-                ? "Đang hoạt động"
-                : "Ngoại tuyến"}
+              : getConvDetails(selectedConv).statusText}
           </div>
 
           {/* Hàng 3 icon tròn: Link trang cá nhân, Chuông thông báo, Tìm kiếm */}
@@ -1245,18 +1617,30 @@ const ChatPage = () => {
               <div className="right-sidebar-management-menu">
                 <button
                   className="right-sidebar-menu-btn"
-                  onClick={() => showNotSupportedMessage("Hạn chế")}
+                  onClick={() => handleRestrictUser(getConvDetails(selectedConv).userId)}
                 >
                   <StopOutlined />
-                  <span>Hạn chế</span>
+                  <span>{getConvDetails(selectedConv).isRestrictedByMe ? "Bỏ hạn chế" : "Hạn chế"}</span>
                 </button>
-                <button
-                  className="right-sidebar-menu-btn danger"
-                  onClick={() => handleBlockUser(getConvDetails(selectedConv).userId)}
-                >
-                  <StopOutlined />
-                  <span>Chặn</span>
-                </button>
+                {blockedUsers.has(getConvDetails(selectedConv).userId?.toString()) ? (
+                  <button
+                    className="right-sidebar-menu-btn"
+                    onClick={() => handleUnblockUser(getConvDetails(selectedConv).userId)}
+                    title="Bỏ chặn người dùng này"
+                  >
+                    <StopOutlined />
+                    <span>Bỏ chặn</span>
+                  </button>
+                ) : (
+                  <button
+                    className="right-sidebar-menu-btn danger"
+                    onClick={() => handleBlockUser(getConvDetails(selectedConv).userId)}
+                    title="Chặn người dùng này"
+                  >
+                    <StopOutlined />
+                    <span>Chặn</span>
+                  </button>
+                )}
                 <button
                   className="right-sidebar-menu-btn danger"
                   onClick={() => handleReportUser(getConvDetails(selectedConv).userId)}
@@ -1287,7 +1671,7 @@ const ChatPage = () => {
               style={{ cursor: "pointer" }}
             >
               <List.Item.Meta
-                avatar={<Avatar src={getMediaUrl(friend.avatar)}>{friend.name[0].toUpperCase()}</Avatar>}
+                avatar={<Avatar src={getMediaUrl(friend.avatar)}>{getInitial(friend.name)}</Avatar>}
                 title={friend.name}
                 description={friend.email}
               />
@@ -1333,7 +1717,7 @@ const ChatPage = () => {
                   <div key={friend._id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px" }} className="hover:bg-gray-50 rounded">
                     <Checkbox value={friend._id} />
                     <Avatar src={getMediaUrl(friend.avatar)} size={28} style={{ marginLeft: 4 }}>
-                      {friend.name[0].toUpperCase()}
+                      {getInitial(friend.name)}
                     </Avatar>
                     <span style={{ fontSize: 14, marginLeft: 4 }}>{friend.name}</span>
                   </div>

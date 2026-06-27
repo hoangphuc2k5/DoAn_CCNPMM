@@ -19,6 +19,11 @@ export default defineConfig({
         target: "http://127.0.0.1:8080",
         changeOrigin: true,
       },
+      "/socket.io": {
+        target: "http://127.0.0.1:8080",
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
 
@@ -35,6 +40,11 @@ export default defineConfig({
       "/uploads": {
         target: "http://127.0.0.1:8080",
         changeOrigin: true,
+      },
+      "/socket.io": {
+        target: "http://127.0.0.1:8080",
+        changeOrigin: true,
+        ws: true,
       },
     },
   },

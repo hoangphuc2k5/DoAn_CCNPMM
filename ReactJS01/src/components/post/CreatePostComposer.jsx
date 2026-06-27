@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from "react";
-import { Avatar, Button, Card, Image, Input, Modal, Select, Tag, Upload } from "antd";
-import { DeleteOutlined, PictureOutlined, UserOutlined } from "@ant-design/icons";
+import { Avatar, Button, Card, Dropdown, Image, Modal, Tag, Upload } from "antd";
+import { CaretDownOutlined, DeleteOutlined, PictureOutlined, TeamOutlined, UserOutlined, GlobalOutlined, LockOutlined } from "@ant-design/icons";
 import { getMediaUrl } from "../../util/media";
+import MentionInput from "../ui/MentionInput";
 
 const getInitials = (name = "") =>
   name
@@ -78,6 +79,23 @@ const CreatePostComposer = ({
     </button>
   );
 
+  const visibilityItems = visibilityOptions.map((option) => ({
+    key: option.value,
+    label: option.label,
+    onClick: () => onVisibilityChange(option.value),
+  }));
+
+  const getCurrentVisibilityLabel = () => {
+    const current = visibilityOptions.find((item) => item.value === visibilityValue);
+    return current ? current.label : "Quyền riêng tư";
+  };
+
+  const getCurrentVisibilityIcon = () => {
+    if (visibilityValue === "friends") return <TeamOutlined />;
+    if (visibilityValue === "private") return <LockOutlined />;
+    return <GlobalOutlined />;
+  };
+
   const triggerNode =
     variant === "group" ? (
       <section className="tg-composer tg-composer-collapsed">{trigger}</section>
@@ -103,26 +121,29 @@ const CreatePostComposer = ({
           </Avatar>
           <div>
             <strong>{name}</strong>
-            {visibilityNode ||
-              (visibilityOptions.length ? (
-                <Select
-                  onChange={onVisibilityChange}
-                  options={visibilityOptions}
-                  size="small"
-                  style={{ minWidth: 132 }}
-                  value={visibilityValue}
-                />
-              ) : null)}
+            <div className="mt-2">
+              {visibilityOptions.length ? (
+                <Dropdown
+                  menu={{ items: visibilityItems }}
+                  trigger={["click"]}
+                  placement="bottomLeft"
+                >
+                  <Button size="small" type="default" className="flex items-center gap-1">
+                    {getCurrentVisibilityIcon()} {getCurrentVisibilityLabel()} <CaretDownOutlined />
+                  </Button>
+                </Dropdown>
+              ) : null}
+            </div>
           </div>
         </div>
 
-        <Input.TextArea
-          autoFocus
-          autoSize={{ minRows: files.length ? 3 : 7, maxRows: files.length ? 5 : 12 }}
-          className="create-post-textarea"
+        <MentionInput
+          type="textarea"
+          value={content}
           onChange={(event) => onContentChange(event.target.value)}
           placeholder={modalPlaceholder}
-          value={content}
+          rows={files.length ? 3 : 7}
+          className="create-post-textarea"
         />
 
         {previews.length ? (

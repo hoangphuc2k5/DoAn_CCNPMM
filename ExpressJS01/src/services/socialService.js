@@ -8,6 +8,7 @@ const Notification = require("../models/notification");
 const Post = require("../models/post");
 const Reaction = require("../models/reaction");
 const Report = require("../models/report");
+const Restriction = require("../models/restriction");
 const SavedPost = require("../models/savedPost");
 const Group = require("../models/group");
 const User = require("../models/user");
@@ -226,7 +227,7 @@ const getVisibleAuthorIdsForFriendsFeed = async (userId) => {
     }).select("requester recipient"),
   ]);
 
-  const ids = new Set([String(userId)]);
+  const ids = new Set();
   following.forEach((item) => ids.add(String(item.following)));
   friendships.forEach((item) => {
     ids.add(String(item.requester));
@@ -286,33 +287,66 @@ const getFeed = async (userId, query) => {
   const blockedUserIds = await getBlockedUserIds(userId);
   const hiddenPostIds = await getHiddenItemIds(userId, "post");
 
-  const filter = {
+  // Get all groups the user is a member of (use toObjectId to match ObjectId stored in members array)
+  const userGroups = await Group.find({
+    members: toObjectId(userId),
+  }).select("_id");
+  const userGroupIds = userGroups.map(g => g._id);
+
+  // Condition for group posts visible to the user (published only)
+  const groupPostsCondition = userGroupIds.length
+    ? {
+        group: { $in: userGroupIds },
+        visibility: { $in: ["public", "group"] },
+        $or: [{ approvalStatus: { $exists: false } }, { approvalStatus: null }, { approvalStatus: "published" }],
+      }
+    : null;
+
+  const baseFilter = {
     _id: { $nin: hiddenPostIds },
     author: { $nin: blockedUserIds.map(toObjectId) },
-    $or: [
-      { visibility: "public" },
-      { visibility: "friends", author: { $in: friendUserIds.map(toObjectId) } },
-      { author: userId }
-    ],
-    group: null,
-    $or: [{ visibility: "public" }, { author: userId }],
   };
 
+  let visibilityFilter;
   if (mode === "friends") {
     const visibleAuthorIds = await getVisibleAuthorIdsForFriendsFeed(userId);
-    filter.author = {
-      $in: visibleAuthorIds.map(toObjectId),
-      $nin: blockedUserIds.map(toObjectId),
-    };
+    // "Đã theo dõi": personal posts from followed/friend authors + posts from joined groups
+    const conditions = [
+      // Personal (non-group) posts from people the user follows/friends
+      {
+        author: {
+          $in: visibleAuthorIds.map(toObjectId),
+          $nin: blockedUserIds.map(toObjectId),
+        },
+        group: null,
+      },
+    ];
+    if (groupPostsCondition) conditions.push(groupPostsCondition);
+    visibilityFilter = { $or: conditions };
+  } else {
+    // "Dành cho bạn": public posts, friends posts, own posts, and group posts from joined groups
+    const conditions = [
+      { visibility: "public", group: null },
+      { visibility: "friends", author: { $in: friendUserIds.map(toObjectId) }, group: null },
+      { author: toObjectId(userId) },
+    ];
+    if (groupPostsCondition) conditions.push(groupPostsCondition);
+    visibilityFilter = { $or: conditions };
   }
+
+  const filter = { ...baseFilter, ...visibilityFilter };
 
   let posts = await Post.find(filter)
     .populate("author", "name email avatar")
     .populate("mentions", "name email")
     .populate({
       path: "sharedPost",
-      populate: { path: "author", select: "name email avatar" },
+      populate: [
+        { path: "author", select: "name email avatar" },
+        { path: "group", select: "name avatar privacy" },
+      ],
     })
+    .populate("group", "name avatar")
     .sort({ createdAt: -1 })
     .skip((page - 1) * limit)
     .limit(limit);
@@ -698,17 +732,21 @@ const updatePost = async (userId, postId, payload = {}) => {
 };
 
 const sharePost = async (userId, postId, content = "") => {
-  const sourcePost = await Post.findById(postId);
+  let sourcePost = await Post.findById(postId);
   if (!sourcePost) return { EC: 1, EM: "Không tìm thấy bài viết" };
+  
+  // If it's a shared post, get the original post
+  if (sourcePost.sharedPost) {
+    sourcePost = await Post.findById(sourcePost.sharedPost);
+    if (!sourcePost) return { EC: 1, EM: "Không tìm thấy bài viết gốc" };
+  }
+  
   if (await hasBlockBetween(userId, sourcePost.author)) return { EC: 2, EM: "Không thể chia sẻ" };
 
   const access = await canInteractWithPost(sourcePost, userId);
   if (!access.allowed) return { EC: 3, EM: "Ban can la thanh vien nhom de chia se" };
   if (access.group?.privacy === "private") {
-    return { EC: 4, EM: "Khong the chia se bai viet trong nhom rieng tu" };
-  }
-  if (sourcePost.visibility === "group") {
-    return { EC: 5, EM: "Khong the chia se bai viet chi hien thi trong nhom" };
+    return { EC: 4, EM: "Không thể chia sẻ bài viết trong nhóm riêng tư" };
   }
 
   const sharedContent = content?.trim() || "Đã chia sẻ một bài viết";
@@ -716,23 +754,26 @@ const sharePost = async (userId, postId, content = "") => {
   const post = await Post.create({
     author: userId,
     content: sharedContent,
-    sharedPost: postId,
+    sharedPost: sourcePost._id,
     mentions: mentionedUsers.map((user) => user._id),
     hashtags: extractHashtags(sharedContent),
   });
-  await Post.findByIdAndUpdate(postId, { $inc: { "stats.shares": 1 } });
+  await Post.findByIdAndUpdate(sourcePost._id, { $inc: { "stats.shares": 1 } });
   await createNotification({
     recipient: sourcePost.author,
     actor: userId,
     type: "post_share",
-    post: postId,
+    post: post._id,
   });
 
   const data = await Post.findById(post._id)
     .populate("author", "name email avatar")
     .populate({
       path: "sharedPost",
-      populate: { path: "author", select: "name email avatar" },
+      populate: [
+        { path: "author", select: "name email avatar" },
+        { path: "group", select: "name avatar privacy" },
+      ],
     });
   return { EC: 0, EM: "Đã chia sẻ", data };
 };
@@ -849,6 +890,21 @@ const unblockUser = async (userId, targetUserId) => {
   return { EC: 0, EM: "Đã bỏ chặn" };
 };
 
+const restrictUser = async (userId, targetUserId) => {
+  if (String(userId) === String(targetUserId)) return { EC: 1, EM: "Không thể hạn chế chính mình" };
+  const restriction = await Restriction.findOneAndUpdate(
+    { restrictor: userId, restricted: targetUserId },
+    { restrictor: userId, restricted: targetUserId },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+  return { EC: 0, EM: "Đã hạn chế người dùng", data: restriction };
+};
+
+const unrestrictUser = async (userId, targetUserId) => {
+  await Restriction.deleteOne({ restrictor: userId, restricted: targetUserId });
+  return { EC: 0, EM: "Đã bỏ hạn chế" };
+};
+
 const reportTarget = async ({ reporter, targetType, targetId, reason }) => {
   if (!reason?.trim()) return { EC: 1, EM: "Vui lòng nhập lý do báo cáo" };
   if (targetType === "user" && isSameId(reporter, targetId)) {
@@ -871,11 +927,42 @@ const reportTarget = async ({ reporter, targetType, targetId, reason }) => {
     }
   }
 
+  // Determine and persist the reported person's name/email for easier admin display
+  let targetName = "";
+  let targetEmail = "";
+
+  try {
+    if (targetType === "user") {
+      const user = await User.findById(targetId).select("name email");
+      if (user) {
+        targetName = user.name || "";
+        targetEmail = user.email || "";
+      }
+    } else if (targetType === "post") {
+      const post = await Post.findById(targetId).select("author").populate("author", "name email");
+      if (post && post.author) {
+        targetName = post.author.name || post.author.email || "";
+        targetEmail = post.author.email || "";
+      }
+    } else if (targetType === "comment") {
+      const comment = await Comment.findById(targetId).select("author").populate("author", "name email");
+      if (comment && comment.author) {
+        targetName = comment.author.name || comment.author.email || "";
+        targetEmail = comment.author.email || "";
+      }
+    }
+  } catch (err) {
+    // ignore lookup errors and proceed to create report without targetName
+    console.error("reportTarget: error fetching target info", err.message || err);
+  }
+
   const report = await Report.create({
     reporter,
     targetType,
     targetId,
     reason: reason.trim(),
+    targetName,
+    targetEmail,
   });
   return { EC: 0, EM: "Đã gửi báo cáo cho quản trị viên", data: report };
 };
@@ -894,6 +981,11 @@ const getTrendingTopics = async () => {
 
 const getRelationships = async (userId) => {
   const blockedUserIds = await getBlockedUserIds(userId);
+
+  // Get only users blocked by the current user (not users who blocked current user)
+  const blockedByMe = await Block.find({ blocker: userId })
+    .select("blocked")
+    .populate("blocked", "name email avatar bio");
 
   const [friendships, incoming, outgoing, following, followers] = await Promise.all([
     Friendship.find({
@@ -944,6 +1036,7 @@ const getRelationships = async (userId) => {
     EC: 0,
     data: {
       friends,
+      blockedUsers: blockedByMe.map((item) => item.blocked).filter(Boolean),
       incomingRequests: incoming.map((item) => ({
         _id: item._id,
         user: item.requester,
@@ -966,14 +1059,15 @@ const getRelationships = async (userId) => {
 };
 
 const getNotifications = async (userId, page = 1, limit = 20) => {
-  const data = await Notification.find({ recipient: userId })
+  const baseQuery = { recipient: userId, type: { $ne: "new_message" } };
+  const data = await Notification.find(baseQuery)
     .sort({ createdAt: -1 })
     .skip((page - 1) * limit)
     .limit(limit)
     .populate("actor", "name email avatar")
     .populate("post", "content")
     .populate("comment", "content");
-  const unread = await Notification.countDocuments({ recipient: userId, readAt: null });
+  const unread = await Notification.countDocuments({ ...baseQuery, readAt: null });
   return { EC: 0, data, unread };
 };
 
@@ -1029,11 +1123,13 @@ module.exports = {
   reactPost,
   reportTarget,
   respondFriendRequest,
+  restrictUser,
   sendFriendRequest,
   sharePost,
   savePost,
   unblockUser,
   unfollowUser,
+  unrestrictUser,
   unsavePost,
   updatePost,
   deletePost,

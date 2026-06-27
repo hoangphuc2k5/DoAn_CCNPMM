@@ -1,7 +1,47 @@
+const mongoose = require("mongoose");
 const Conversation = require("../models/conversation");
 const Message = require("../models/message");
-const User = require("../models/user");
-const { createNotification } = require("./notificationService");
+const Block = require("../models/block");
+const Restriction = require("../models/restriction");
+
+const getUnreadSummary = async (userId) => {
+  const userObjectId = new mongoose.Types.ObjectId(userId);
+  const conversations = await Conversation.find({ participants: userId })
+    .select("_id")
+    .lean();
+  const convIds = conversations.map((c) => c._id);
+
+  if (!convIds.length) {
+    return { total: 0, byConversation: {} };
+  }
+
+  const unreadAgg = await Message.aggregate([
+    {
+      $match: {
+        conversation: { $in: convIds },
+        sender: { $ne: userObjectId },
+        isRecalled: false,
+        seenBy: { $not: { $elemMatch: { user: userObjectId } } },
+      },
+    },
+    {
+      $group: {
+        _id: "$conversation",
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const byConversation = {};
+  let total = 0;
+  unreadAgg.forEach((row) => {
+    const id = row._id.toString();
+    byConversation[id] = row.count;
+    total += row.count;
+  });
+
+  return { total, byConversation };
+};
 
 const getConversations = async (userId) => {
   try {
@@ -18,10 +58,70 @@ const getConversations = async (userId) => {
       })
       .sort({ updatedAt: -1 });
 
+    const { byConversation, total } = await getUnreadSummary(userId);
+    
+    // For each conversation, add user status info (isBlocked, isRestricted)
+    const userIdStr = userId.toString();
+    const data = await Promise.all(conversations.map(async (conv) => {
+      const obj = conv.toObject();
+      obj.unreadCount = byConversation[conv._id.toString()] || 0;
+      
+      // Add status info for each participant
+      obj.participantsWithStatus = await Promise.all(
+        conv.participants.map(async (participant) => {
+          const pId = (participant._id || participant).toString();
+          const isCurrentUser = pId === userIdStr;
+          
+          if (isCurrentUser) {
+            return {
+              ...participant,
+              isBlocked: false,
+              isRestricted: false,
+            };
+          }
+          
+          // Check if current user blocked this participant
+          const blockedByMe = await Block.findOne({
+            blocker: userId,
+            blocked: participant._id,
+          });
+          
+          // Check if this participant blocked current user
+          const blockedMe = await Block.findOne({
+            blocker: participant._id,
+            blocked: userId,
+          });
+          
+          // Check if current user restricted this participant
+          const restrictedByMe = await Restriction.findOne({
+            restrictor: userId,
+            restricted: participant._id,
+          });
+          
+          // Check if this participant restricted current user
+          const restrictedMe = await Restriction.findOne({
+            restrictor: participant._id,
+            restricted: userId,
+          });
+          
+          return {
+            ...participant,
+            isBlockedByMe: Boolean(blockedByMe),
+            isBlockedMe: Boolean(blockedMe),
+            isRestrictedByMe: Boolean(restrictedByMe),
+            isRestrictedMe: Boolean(restrictedMe),
+          };
+        })
+      );
+      
+      return obj;
+    }));
+
     return {
       EC: 0,
       EM: "Lấy danh sách hội thoại thành công",
-      data: conversations,
+      data,
+      totalUnread: total,
     };
   } catch (error) {
     console.error("Error in getConversations:", error);
@@ -44,6 +144,19 @@ const createConversation = async (userId, payload) => {
         return {
           EC: 1,
           EM: "Thiếu thông tin người nhận",
+        };
+      }
+
+      // Kiểm tra xem người dùng hiện tại có bị chặn bởi người nhận không
+      const blockCheck = await Block.findOne({
+        blocker: targetUserId,
+        blocked: userId,
+      });
+
+      if (blockCheck) {
+        return {
+          EC: 1,
+          EM: "Bạn không thể tạo cuộc trò chuyện với người dùng này vì bạn đã bị chặn",
         };
       }
 
@@ -135,6 +248,8 @@ const getMessages = async (conversationId, userId, limit = 50, skip = 0) => {
       };
     }
 
+    // Allow user to view old messages even if they are blocked or blocking
+    // Just fetch all messages from the conversation
     const messages = await Message.find({ conversation: conversationId })
       .populate("sender", "_id name avatar")
       .populate("seenBy.user", "_id name avatar")
@@ -170,6 +285,27 @@ const sendMessage = async (conversationId, senderId, payload, files = []) => {
         EC: 1,
         EM: "Hội thoại không tồn tại hoặc bạn không có quyền gửi tin nhắn",
       };
+    }
+
+    // Kiểm tra xem người gửi có bị chặn bởi bất kỳ người tham gia nào không
+    // Nếu có, không cho phép gửi tin nhắn
+    const senderIdStr = senderId.toString();
+    const otherParticipants = conversation.participants
+      .map(p => (p._id || p).toString())
+      .filter(pId => pId !== senderIdStr);
+
+    if (otherParticipants.length > 0) {
+      const blockCheck = await Block.findOne({
+        blocker: { $in: otherParticipants },
+        blocked: senderId,
+      });
+
+      if (blockCheck) {
+        return {
+          EC: 1,
+          EM: "Bạn không thể gửi tin nhắn vì đã bị chặn",
+        };
+      }
     }
 
     let messageType = type || "text";
@@ -222,25 +358,6 @@ const sendMessage = async (conversationId, senderId, payload, files = []) => {
       .populate("sender", "_id name avatar")
       .populate("seenBy.user", "_id name avatar");
 
-    const recipients = conversation.participants
-      .map((participant) => participant.toString())
-      .filter((participantId) => participantId !== senderId.toString());
-
-    await Promise.all(
-      recipients.map((recipientId) =>
-        createNotification({
-          recipient: recipientId,
-          actor: senderId,
-          type: "new_message",
-          metadata: {
-            conversationId: conversationId.toString(),
-            messageId: message._id.toString(),
-            preview: content || (attachments.length ? "Đã gửi một tệp đính kèm" : "Đã gửi tin nhắn"),
-          },
-        }),
-      ),
-    );
-
     return {
       EC: 0,
       EM: "Gửi tin nhắn thành công",
@@ -280,6 +397,10 @@ const recallMessage = async (messageId, userId) => {
     await message.save();
 
     const populatedMessage = await Message.findById(messageId)
+      .populate({
+        path: "conversation",
+        populate: { path: "participants", select: "_id" },
+      })
       .populate("sender", "_id name avatar")
       .populate("seenBy.user", "_id name avatar");
 
@@ -304,7 +425,7 @@ const markSeen = async (conversationId, userId) => {
     await Message.updateMany(
       {
         conversation: conversationId,
-        "seenBy.user": { $ne: userId },
+        seenBy: { $not: { $elemMatch: { user: userId } } },
       },
       {
         $push: { seenBy: { user: userId, seenAt: new Date() } },
@@ -327,6 +448,7 @@ const markSeen = async (conversationId, userId) => {
 
 module.exports = {
   getConversations,
+  getUnreadSummary,
   createConversation,
   getMessages,
   sendMessage,

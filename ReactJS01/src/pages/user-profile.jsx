@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { Spin, message, Empty, Modal, Input, Select, Button, Space, Tag } from "antd";
 import { LoadingOutlined, GlobalOutlined, PushpinOutlined, EditOutlined, DeleteOutlined, TeamOutlined, LockOutlined } from "@ant-design/icons";
@@ -28,12 +28,14 @@ import CreatePostModal from "../components/profile/CreatePostModal";
 import { getMediaUrl } from "../util/media";
 
 import axiosInstance from "../util/axios.customize";
+import { getPostByIdApi } from "../util/api";
 import {
   followUserApi,
   unfollowUserApi,
   friendRequestApi,
   respondFriendRequestApi,
   blockUserApi,
+  unblockUserApi,
   createPostApi,
   sharePostApi,
   deletePostApi,
@@ -76,6 +78,25 @@ const renderPostContent = (text = "") => {
   return parts.length > 0 ? parts : text;
 };
 
+const normalizePostMedia = (media = []) =>
+  media
+    .map((item) => {
+      if (!item) return null;
+      if (typeof item === "string") {
+        const isVideo =
+          item.includes("#type=video") ||
+          item.includes("/video/") ||
+          /\.(mp4|mov|avi|mkv|webm)$/i.test(item);
+        return { url: item, type: isVideo ? "video" : "image" };
+      }
+      return {
+        ...item,
+        url: item.url,
+        type: item.type || (item.mimeType?.startsWith("video/") ? "video" : "image"),
+      };
+    })
+    .filter(Boolean);
+
 const UserProfilePage = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
@@ -96,6 +117,9 @@ const UserProfilePage = () => {
   const [selectedPost, setSelectedPost] = useState(null);
   const [detailVisible, setDetailVisible] = useState(false);
   const [postToEdit, setPostToEdit] = useState(null);
+
+  // Track if user is blocked
+  const [isBlocked, setIsBlocked] = useState(false);
 
   const {
     profileUser,
@@ -123,6 +147,9 @@ const UserProfilePage = () => {
         if (res?.EC === 0) {
           setFollowing(res.data.following || []);
           setIncomingRequests(res.data.incomingRequests || []);
+          // Check if current profile is in blocked users
+          const blockedUserIds = (res.data.blockedUsers || []).map(u => (u._id || u).toString());
+          setIsBlocked(false);
         }
       } else {
         // Fetch followings of the viewed user
@@ -131,6 +158,13 @@ const UserProfilePage = () => {
           setFollowing(res.data.following || []);
         }
         setIncomingRequests([]);
+        
+        // Fetch current user's relationships to check if they blocked this user
+        const relRes = await axiosInstance.get("/v1/api/relationships");
+        if (relRes?.EC === 0) {
+          const blockedUserIds = (relRes.data.blockedUsers || []).map(u => (u._id || u).toString());
+          setIsBlocked(blockedUserIds.includes(userId));
+        }
       }
     } catch (err) {
       console.error("Error loading relationships:", err);
@@ -149,6 +183,25 @@ const UserProfilePage = () => {
       loadRelationships();
     }
   }, [userId, dispatch]);
+
+  // Open a specific post if postId present in query params
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const postId = searchParams.get("postId");
+    if (postId) {
+      (async () => {
+        try {
+          const res = await getPostByIdApi(postId);
+          if (res?.EC === 0) {
+            setSelectedPost(res.data);
+            setDetailVisible(true);
+          }
+        } catch (err) {
+          console.error("Error fetching post by id:", err);
+        }
+      })();
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (error) {
@@ -305,12 +358,35 @@ const UserProfilePage = () => {
           const res = await blockUserApi(userId);
           if (res?.EC === 0) {
             message.success("Đã chặn người dùng");
+            setIsBlocked(true);
             navigate("/");
           } else {
             message.error(res?.EM || "Lỗi chặn");
           }
         } catch (err) {
           message.error("Lỗi thao tác chặn");
+        }
+      },
+    });
+  };
+
+  const handleUnblockClick = async () => {
+    Modal.confirm({
+      title: "Bỏ chặn người dùng này?",
+      content: "Bạn sẽ lại có thể tương tác với người dùng này.",
+      okText: "Bỏ chặn",
+      cancelText: "Hủy",
+      onOk: async () => {
+        try {
+          const res = await unblockUserApi(userId);
+          if (res?.EC === 0) {
+            message.success("Đã bỏ chặn người dùng");
+            setIsBlocked(false);
+          } else {
+            message.error(res?.EM || "Lỗi bỏ chặn");
+          }
+        } catch (err) {
+          message.error("Lỗi thao tác bỏ chặn");
         }
       },
     });
@@ -420,8 +496,7 @@ const UserProfilePage = () => {
   };
 
   const handlePostClick = (post) => {
-    setSelectedPost(post);
-    setDetailVisible(true);
+    navigate(`/?postId=${post._id}`);
   };
 
   const handlePinPost = async (post) => {
@@ -490,6 +565,7 @@ const UserProfilePage = () => {
         onAddFriendClick={handleAddFriendClick}
         onAcceptFriendClick={handleAcceptFriendClick}
         onBlockClick={handleBlockClick}
+        onUnblockClick={handleUnblockClick}
         onEditClick={() => setEditModalVisible(true)}
         pendingRequestsCount={incomingRequests.length}
         onIncomingRequestsClick={() => {
@@ -497,6 +573,7 @@ const UserProfilePage = () => {
         }}
         onUnfriendClick={handleUnfriendClick}
         onRejectFriendClick={handleRejectFriendClick}
+        isBlocked={isBlocked}
       />
 
       {/* Edit Profile Modal Dialog */}
@@ -653,28 +730,36 @@ const UserProfilePage = () => {
         }
         width={600}
       >
-        {selectedPost && (
+        {selectedPost && (() => {
+          const mediaItems = normalizePostMedia(selectedPost.media);
+          const hero = mediaItems[0];
+          const heroUrl = hero?.url ? getMediaUrl(hero.url) : "";
+
+          return (
           <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "12px 0" }}>
+            {selectedPost.author?.name ? (
+              <div style={{ fontWeight: 700, color: "#111827" }}>{selectedPost.author.name}</div>
+            ) : null}
             <div style={{ fontSize: "16px", color: "#1a1a1a", whiteSpace: "pre-wrap" }}>
               {renderPostContent(selectedPost.content)}
             </div>
-            {selectedPost.media && selectedPost.media.length > 0 && (
+            {hero ? (
               <div style={{ borderRadius: "12px", overflow: "hidden", border: "1px solid #edf0f4" }}>
-                {selectedPost.media[0].includes("#type=video") || selectedPost.media[0].endsWith(".mp4") || selectedPost.media[0].endsWith(".mov") || selectedPost.media[0].includes("/video/") ? (
+                {hero.type === "video" ? (
                   <video
-                    src={getMediaUrl(selectedPost.media[0])}
+                    src={heroUrl}
                     controls
                     style={{ width: "100%", maxHeight: "400px", objectFit: "contain", backgroundColor: "#f8f9fa" }}
                   />
                 ) : (
                   <img
-                    src={getMediaUrl(selectedPost.media[0])}
+                    src={heroUrl}
                     alt="Post media"
                     style={{ width: "100%", maxHeight: "400px", objectFit: "contain", backgroundColor: "#f8f9fa" }}
                   />
                 )}
               </div>
-            )}
+            ) : null}
             <div
               style={{
                 display: "flex",
@@ -690,32 +775,9 @@ const UserProfilePage = () => {
               <span>↗️ {selectedPost.stats?.shares || 0} chia sẻ</span>
             </div>
           </div>
-        )}
+          );
+        })()}
       </Modal>
-        <div style={{ marginTop: "20px" }}>
-          {activeTab === "posts" && (
-            <PostsList
-              posts={posts}
-              loading={loading}
-              hasNextPage={postsHasNextPage}
-              onLoadMore={handleLoadMorePosts}
-            />
-          )}
-          {activeTab === "friends" && (
-            <FriendsList friends={friends} loading={loading} />
-          )}
-          {activeTab === "followers" && (
-            <FollowersList followers={followers} loading={loading} />
-          )}
-          {activeTab === "media" && (
-            <MediaGrid
-              media={media}
-              loading={loading}
-              hasNextPage={mediaHasNextPage}
-              onLoadMore={handleLoadMoreMedia}
-            />
-          )}
-        </div>
     </div>
   );
 };

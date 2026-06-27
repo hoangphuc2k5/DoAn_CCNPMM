@@ -19,7 +19,6 @@ import {
   CommentOutlined,
   HeartFilled,
   MailOutlined,
-  MessageOutlined,
   PushpinOutlined,
   RetweetOutlined,
   TeamOutlined,
@@ -52,7 +51,6 @@ const notificationText = {
   follow: "đã theo dõi bạn",
   friend_request: "đã gửi lời mời kết bạn",
   friend_accept: "đã chấp nhận lời mời kết bạn",
-  new_message: "đã gửi tin nhắn mới",
   report_received: "có báo cáo mới",
 };
 
@@ -66,11 +64,10 @@ const categoryMap = {
   follow: "Kết nối",
   friend_request: "Kết nối",
   friend_accept: "Kết nối",
-  new_message: "Tin nhắn",
   report_received: "Hệ thống",
 };
 
-const categoryOptions = ["Tất cả", "Tương tác", "Kết nối", "Tin nhắn", "Hệ thống"];
+const categoryOptions = ["Tất cả", "Tương tác", "Kết nối", "Hệ thống"];
 
 const typeIcon = {
   post_reaction: <HeartFilled />,
@@ -82,7 +79,6 @@ const typeIcon = {
   follow: <UserAddOutlined />,
   friend_request: <TeamOutlined />,
   friend_accept: <CheckCircleOutlined />,
-  new_message: <MessageOutlined />,
   report_received: <PushpinOutlined />,
 };
 
@@ -145,6 +141,8 @@ const NotificationPage = () => {
     if (!socket) return undefined;
 
     const handleNewNotification = ({ notification, unread: nextUnread }) => {
+      if (notification?.type === "new_message") return;
+
       const enriched = {
         ...notification,
         text: notificationText[notification.type] || notification.type,
@@ -164,6 +162,7 @@ const NotificationPage = () => {
   const filteredNotifications = useMemo(
     () =>
       notifications.filter((item) => {
+        if (item.type === "new_message") return false;
         const readMatch = view === "all" || !item.readAt;
         const categoryMatch = category === "Tất cả" || categoryMap[item.type] === category;
         return readMatch && categoryMatch;
@@ -175,7 +174,6 @@ const NotificationPage = () => {
     () => ({
       interactions: notifications.filter((item) => categoryMap[item.type] === "Tương tác").length,
       connections: notifications.filter((item) => categoryMap[item.type] === "Kết nối").length,
-      messages: notifications.filter((item) => item.type === "new_message").length,
     }),
     [notifications],
   );
@@ -247,7 +245,7 @@ const NotificationPage = () => {
           <div>
             <Typography.Title level={3}>Thông báo</Typography.Title>
             <Typography.Text type="secondary">
-              Theo dõi like, comment, kết bạn, tin nhắn mới và các kênh gửi realtime.
+              Theo dõi like, comment, kết bạn và các kênh gửi realtime.
             </Typography.Text>
           </div>
           <Space wrap>
@@ -274,11 +272,6 @@ const NotificationPage = () => {
             <TeamOutlined />
             <strong>{stats.connections}</strong>
             <span>Follow / kết bạn</span>
-          </div>
-          <div className="notification-status-card">
-            <MessageOutlined />
-            <strong>{stats.messages}</strong>
-            <span>Tin nhắn mới</span>
           </div>
           <div className="notification-status-card">
             <MailOutlined />

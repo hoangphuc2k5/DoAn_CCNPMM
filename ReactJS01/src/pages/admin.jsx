@@ -84,7 +84,13 @@ const formatTarget = (log) => {
   return type ? `${type}${id}` : "--";
 };
 
-const formatNumber = (value) => Number(value || 0).toLocaleString("vi-VN");
+const getInitials = (name = "") =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("") || "U";
 
 const timeAgo = (value) => {
   if (!value) return "--";
@@ -97,20 +103,11 @@ const timeAgo = (value) => {
   return `${days} ngày trước`;
 };
 
-const getInitials = (name = "") =>
-  name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() || "")
-    .join("") || "U";
-
 const cardShadow = "0px 1px 1.5px rgba(0,0,0,0.1), 0px 1px 1px rgba(0,0,0,0.1)";
 
 const StatusPill = ({ status }) => {
   const map = {
     active: { label: "Hoạt động", bg: COLORS.greenBg, color: COLORS.green },
-    suspended: { label: "Tạm khóa", bg: COLORS.orangeBg, color: COLORS.orange },
     banned: { label: "Bị cấm", bg: COLORS.redBg, color: COLORS.red },
     open: { label: "Chờ xử lý", bg: COLORS.orangeBg, color: COLORS.orange },
     reviewing: { label: "Đang xem", bg: "#dbeafe", color: "#2563eb" },
@@ -171,7 +168,7 @@ const StatCard = ({ icon: Icon, title, value, change, iconBg, iconColor }) => (
       )}
     </div>
     <div style={{ fontSize: 24, fontWeight: 700, color: COLORS.textPrimary, lineHeight: "32px", marginTop: 12 }}>
-      {formatNumber(value)}
+      {Number(value || 0).toLocaleString("vi-VN")}
     </div>
     <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>{title}</div>
   </div>
@@ -659,103 +656,175 @@ const PostsView = ({ posts, keyword, setKeyword, onSearch, onRemove, onView }) =
 
 const ReportsView = ({ reports, onResolve }) => (
   <>
-    <h1 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textPrimary, margin: 0 }}>Báo cáo vi phạm</h1>
+    <h1 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textPrimary, margin: 0 }}>Báo cáo vi phạm — Chi tiết</h1>
+    <p style={{ margin: "8px 0 0", fontSize: 14, color: COLORS.textMuted }}>
+      Danh sách các báo cáo vi phạm với thông tin chi tiết về đối tượng, người báo cáo và chứng cứ (nếu có).
+    </p>
     <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 20 }}>
       {reports.length === 0 ? (
         <div style={{ padding: 32, textAlign: "center", color: COLORS.textMuted }}>Chưa có báo cáo</div>
       ) : (
-        reports.map((report) => {
-          const pending = ["open", "reviewing"].includes(report.status);
-          return (
-            <div
-              key={report._id}
-              style={{
-                background: "#ffffff",
-                border: `0.8px solid ${pending ? "#fee685" : COLORS.borderLight}`,
-                borderRadius: 16,
-                boxShadow: cardShadow,
-                padding: 16.8,
-              }}
-            >
-              <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 14,
-                    background: pending ? COLORS.orangeBg : "#dbeafe",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  <FlagOutlined style={{ fontSize: 16, color: pending ? COLORS.orange : "#2563eb" }} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.textPrimary }}>
-                      {report.targetType === "user" ? "Người dùng" : "Bài viết"} · {report.reason}
-                    </span>
-                    <StatusPill status={report.status || "open"} />
-                  </div>
-                  <p style={{ margin: "4px 0 0", fontSize: 12, color: COLORS.textGray }}>
-                    <strong>Lý do:</strong> {report.reason}
-                  </p>
-                  <p style={{ margin: "2px 0 0", fontSize: 12, color: COLORS.textLight }}>
-                    Báo cáo bởi <strong>{report.reporter?.name || report.reporter?.email || "Ẩn danh"}</strong> · {timeAgo(report.createdAt)}
-                  </p>
-                </div>
-                {pending && (
-                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                    <button
-                      type="button"
-                      onClick={() => onResolve(report._id, "resolved")}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                        padding: "6px 12px",
-                        borderRadius: 10,
-                        border: "none",
-                        background: COLORS.greenBg,
-                        color: COLORS.green,
-                        fontSize: 12,
-                        fontWeight: 700,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <CheckOutlined /> Xử lý
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onResolve(report._id, "rejected")}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                        padding: "6px 12px",
-                        borderRadius: 10,
-                        border: "none",
-                        background: "#f3f4f6",
-                        color: COLORS.textMuted,
-                        fontSize: 12,
-                        fontWeight: 700,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <CloseOutlined /> Bỏ qua
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })
+        reports.map((report) => <ReportCard key={report._id} report={report} onResolve={onResolve} />)
       )}
     </div>
   </>
 );
+
+const ReportCard = ({ report, onResolve }) => {
+  const [expanded, setExpanded] = useState(false);
+  const pending = ["open", "reviewing"].includes(report.status);
+  const target = report.target || {};
+  // Prefer actual person name. If the target is a post/comment, try the author fields.
+  const author = target.author || target.user || {};
+  let reportedName = "";
+  if (report.targetType === "user") {
+    reportedName = target.name || target.fullName || target.displayName || target.username || target.email || report.targetName || "Không rõ";
+  } else if (report.targetType === "post" || report.targetType === "comment") {
+    reportedName = author.name || author.fullName || author.displayName || author.username || author.email || report.targetName || "Không rõ";
+  } else {
+    reportedName = target.name || target.fullName || author.name || report.targetName || "Không rõ";
+  }
+  const reportedId = (author && (author._id || author.id)) || target._id || report.targetId || "-";
+
+  return (
+    <div
+      style={{
+        background: "#ffffff",
+        border: `0.8px solid ${pending ? "#fee685" : COLORS.borderLight}`,
+        borderRadius: 16,
+        boxShadow: cardShadow,
+        padding: 16.8,
+      }}
+    >
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 14,
+            background: pending ? COLORS.orangeBg : "#dbeafe",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <FlagOutlined style={{ fontSize: 16, color: pending ? COLORS.orange : "#2563eb" }} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.textPrimary }}>
+              {report.targetType === "user" ? "Người dùng" : "Bài viết"} · {report.reason}
+            </span>
+            <StatusPill status={report.status || "open"} />
+          </div>
+
+          <div style={{ marginTop: 8, padding: 12, borderRadius: 12, background: COLORS.bgPage, border: `0.8px solid ${COLORS.borderLight}` }}>
+            {report.targetType === "user" ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <Avatar size={40} src={getMediaUrl(target.avatar)} style={{ backgroundColor: COLORS.purple }}>
+                  {getInitials(target.name || target.email)}
+                </Avatar>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {reportedName}
+                  </div>
+                  <div style={{ fontSize: 12, color: COLORS.textLight }}>ID: {reportedId}</div>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize: 13, color: COLORS.textGray, marginBottom: 6 }}>Nội dung báo cáo</div>
+                <div style={{ fontSize: 14, color: COLORS.textPrimary }}>
+                  <div style={{ maxHeight: expanded ? 1000 : 72, overflow: "hidden", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                    {target.content || "(Không có nội dung)"}
+                  </div>
+                  {target.media?.length > 0 && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      {target.media.map((m, idx) => (
+                        <img key={idx} src={getMediaUrl(m)} alt={`evidence-${idx}`} style={{ width: 120, height: 84, objectFit: "cover", borderRadius: 6 }} />
+                      ))}
+                    </div>
+                  )}
+                  {String(target.content || "").length > 200 && (
+                    <button type="button" onClick={() => setExpanded(!expanded)} style={{ marginTop: 8, border: "none", background: "transparent", color: COLORS.purple, cursor: "pointer", fontWeight: 700 }}>
+                      {expanded ? "Thu gọn" : "Xem thêm"}
+                    </button>
+                  )}
+                </div>
+                        <div style={{ fontSize: 12, color: COLORS.textLight, marginTop: 6 }}>ID: {reportedId}</div>
+              </div>
+            )}
+          </div>
+
+          <p style={{ margin: "8px 0 0", fontSize: 13, color: COLORS.textGray }}>
+            <strong>Lý do báo cáo:</strong> {report.reason}
+          </p>
+          {report.note && (
+            <p style={{ margin: "6px 0 0", fontSize: 13, color: COLORS.textGray }}>
+              <strong>Mô tả thêm:</strong> {report.note}
+            </p>
+          )}
+
+          {report.media?.length > 0 && (
+            <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {report.media.map((m, idx) => (
+                <img key={idx} src={getMediaUrl(m)} alt={`evidence-${idx}`} style={{ width: 120, height: 84, objectFit: "cover", borderRadius: 8 }} />
+              ))}
+            </div>
+          )}
+
+          <p style={{ margin: "8px 0 0", fontSize: 12, color: COLORS.textLight }}>
+            Báo cáo bởi <strong>{report.reporter?.name || report.reporter?.email || "Ẩn danh"}</strong>
+            {report.reporter?.email ? ` · ${report.reporter.email}` : ""} · {timeAgo(report.createdAt)}
+          </p>
+        </div>
+        {pending && (
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={() => onResolve(report._id, "resolved")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "6px 12px",
+                borderRadius: 10,
+                border: "none",
+                background: COLORS.greenBg,
+                color: COLORS.green,
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              <CheckOutlined /> Xử lý
+            </button>
+            <button
+              type="button"
+              onClick={() => onResolve(report._id, "rejected")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "6px 12px",
+                borderRadius: 10,
+                border: "none",
+                background: "#f3f4f6",
+                color: COLORS.textMuted,
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              <CloseOutlined /> Bỏ qua
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const HistoryView = ({ logs }) => (
   <>
@@ -1002,9 +1071,6 @@ const AdminPage = () => {
           setSelectedUser(null);
         }}
         footer={[
-          <Button key="suspend" onClick={() => selectedUser && handleUserAction(selectedUser._id, "suspended")}>
-            Tạm khóa
-          </Button>,
           <Button
             key="ban"
             danger

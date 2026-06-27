@@ -1,4 +1,5 @@
 import { useState } from "react";
+import MentionInput from "../ui/MentionInput";
 import {
   Avatar,
   Button,
@@ -74,7 +75,8 @@ const PostCommentsModal = ({
   const [hiddenCommentIds, setHiddenCommentIds] = useState([]);
   const comments = post?.comments || [];
   const titleName = post?.author?.name || post?.author?.email || "người dùng";
-  const media = normalizeMedia(post?.media);
+  // Use shared post's media if available, otherwise use post's own media
+  const media = normalizeMedia(post?.sharedPost?.media || post?.media);
 
   const isHidden = (commentId) => hiddenCommentIds.includes(commentId);
   const getEntityId = (entity) => entity?._id || entity?.id || entity;
@@ -275,6 +277,27 @@ const PostCommentsModal = ({
               </Typography.Paragraph>
             ) : null}
 
+            {/* Render shared post if exists */}
+            {post.sharedPost ? (
+              <div className="border border-gray-200 rounded-lg p-3 mb-3 bg-gray-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Avatar
+                    size={24}
+                    src={getMediaUrl(post.sharedPost.author?.avatar)}
+                    icon={<UserOutlined />}
+                  >
+                    {post.sharedPost.author?.name?.[0] || "U"}
+                  </Avatar>
+                  <span className="font-semibold text-sm">
+                    {post.sharedPost.author?.name}
+                  </span>
+                </div>
+                <Typography.Paragraph className="mb-2">
+                  {post.sharedPost.content}
+                </Typography.Paragraph>
+              </div>
+            ) : null}
+
             {media.length ? (
               <Image.PreviewGroup>
                 <div className="post-dialog-media-grid">
@@ -350,10 +373,11 @@ const PostCommentsModal = ({
                 {getInitials(currentUser?.name)}
               </Avatar>
               <Space.Compact className="post-dialog-comment-input">
-                <Input
+                <MentionInput
+                  type="input"
                   value={commentValue}
                   onChange={(event) => onCommentChange?.(event.target.value)}
-                  onPressEnter={() => onSubmitComment?.(post._id)}
+                  onPressEnter={(raw) => onSubmitComment?.(post._id, raw)}
                   placeholder="Viết bình luận..."
                 />
                 <Button

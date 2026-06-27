@@ -25,6 +25,14 @@ const reportSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       required: true,
     },
+    targetName: {
+      type: String,
+      default: "",
+    },
+    targetEmail: {
+      type: String,
+      default: "",
+    },
     reason: {
       type: String,
       required: true,

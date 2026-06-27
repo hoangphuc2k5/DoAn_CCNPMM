@@ -242,7 +242,14 @@ const getUserPostsService = async (
     const posts = await Post.find(query)
       .sort({ isPinned: -1, createdAt: -1 })
       .limit(limit + 1)
-      .populate("author", "name avatar");
+      .populate("author", "name avatar")
+      .populate({
+        path: "sharedPost",
+        populate: [
+          { path: "author", select: "name avatar" },
+          { path: "group", select: "name avatar privacy" },
+        ],
+      });
 
     const hasNextPage = posts.length > limit;
     const paginatedPosts = posts.slice(0, limit);

@@ -50,6 +50,8 @@ const respondFriendRequestApi = (requestId, action) =>
 const getRelationshipsApi = () => axios.get("/v1/api/relationships");
 const blockUserApi = (userId) => axios.post(`/v1/api/users/${userId}/block`);
 const unblockUserApi = (userId) => axios.delete(`/v1/api/users/${userId}/block`);
+const restrictUserApi = (userId) => axios.post(`/v1/api/users/${userId}/restrict`);
+const unrestrictUserApi = (userId) => axios.delete(`/v1/api/users/${userId}/restrict`);
 const reportUserApi = (userId, reason) => axios.post(`/v1/api/users/${userId}/report`, { reason });
 
 const getNotificationsApi = (params = {}) => axios.get("/v1/api/notifications", { params });
@@ -66,6 +68,7 @@ const getTrendingApi = () => axios.get("/v1/api/trending");
 const searchApi = (q) => axios.get("/v1/api/search", { params: { q } });
 
 const getConversationsApi = () => axios.get("/v1/api/conversations");
+const getChatUnreadSummaryApi = () => axios.get("/v1/api/conversations/unread-summary");
 const createConversationApi = (payload) => axios.post("/v1/api/conversations", payload);
 const getMessagesApi = (conversationId, params) =>
   axios.get(`/v1/api/conversations/${conversationId}/messages`, { params });
@@ -144,6 +147,7 @@ export {
   getAdminUsersApi,
   getAdminLogsApi,
   getCaptchaApi,
+  getChatUnreadSummaryApi,
   getConversationsApi,
   getDeviceHistoryApi,
   getFeedApi,
@@ -188,6 +192,7 @@ export {
   resolveGroupReportApi,
   respondFriendRequestApi,
   respondGroupJoinRequestApi,
+  restrictUserApi,
   reviewGroupPostApi,
   searchApi,
   sendMessageApi,
@@ -198,6 +203,7 @@ export {
   unfollowUserApi,
   unfriendUserApi,
   unbanAdminUserApi,
+  unrestrictUserApi,
   unsavePostApi,
   unsubscribePushApi,
   updateAdminUserStatusApi,

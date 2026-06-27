@@ -1161,6 +1161,17 @@ select,
   padding: 18px 24px;
 }
 
+.tg-post-highlighted {
+  animation: tg-highlight-pulse 3s ease-out forwards;
+  border-radius: 12px;
+}
+
+@keyframes tg-highlight-pulse {
+  0%   { background-color: #f0e6ff; box-shadow: 0 0 0 3px #c084fc; }
+  60%  { background-color: #f9f4ff; box-shadow: 0 0 0 1px #e9d5ff; }
+  100% { background-color: transparent; box-shadow: none; }
+}
+
 .tg-pinned {
   display: inline-block;
   margin-bottom: 12px;
@@ -2572,6 +2583,8 @@ textarea {
 }
 
 .chat-sidebar-title {
+  display: inline-flex;
+  align-items: center;
   font-size: 22px;
   font-weight: 850;
   color: #1a1a1a;
@@ -2604,6 +2617,10 @@ textarea {
 
 .chat-tab-button {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   text-align: center;
   padding: 12px 0;
   font-weight: 800;
@@ -2729,7 +2746,7 @@ textarea {
 }
 
 .chat-item-name.unread {
-  color: #000000;
+  color: #FF3B30;
   font-weight: 800;
 }
 
@@ -2739,7 +2756,7 @@ textarea {
 }
 
 .chat-item-snippet.unread {
-  color: #7F00FD;
+  color: #FF3B30;
   font-weight: 800;
 }
 

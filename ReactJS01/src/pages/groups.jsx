@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import {
   Avatar,
@@ -149,6 +149,8 @@ const getReactionOption = (type) =>
 const GroupsPage = () => {
   const navigate = useNavigate();
   const { groupId: routeGroupId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const targetPostId = searchParams.get("postId");
   const { isAuthenticated, user } = useSelector((state) => state.auth);
   const userProfile = useSelector((state) => state.userProfile.profileUser);
   const [groups, setGroups] = useState([]);
@@ -176,6 +178,8 @@ const GroupsPage = () => {
   const [replyDrafts, setReplyDrafts] = useState({});
   const [commentModalPostId, setCommentModalPostId] = useState("");
   const [hiddenPostIds, setHiddenPostIds] = useState([]);
+  const [highlightedPostId, setHighlightedPostId] = useState("");
+  const postsRef = useRef([]);
   const [groupForm] = Form.useForm();
   const [eventForm] = Form.useForm();
   const [settingsForm] = Form.useForm();
@@ -325,6 +329,28 @@ const GroupsPage = () => {
   const updateGroupPost = (postId, updater) => {
     setPosts((prev) => prev.map((post) => (post._id === postId ? updater(post) : post)));
   };
+
+  // Keep postsRef in sync
+  useEffect(() => { postsRef.current = posts; }, [posts]);
+
+  // Scroll to target post when navigating with ?postId
+  useEffect(() => {
+    if (!targetPostId || !posts.length) return;
+    let cancelled = false;
+    const scrollToTarget = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      if (cancelled) return;
+      const el = document.getElementById(`post-${targetPostId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setHighlightedPostId(targetPostId);
+        setTimeout(() => { if (!cancelled) setHighlightedPostId(""); }, 3000);
+      }
+      setSearchParams({}, { replace: true });
+    };
+    scrollToTarget();
+    return () => { cancelled = true; };
+  }, [targetPostId, posts]);
 
   const removeCommentFromGroupPost = (postId, commentId) => {
     updateGroupPost(postId, (post) => ({
@@ -1307,7 +1333,11 @@ const GroupsPage = () => {
       {renderPostComposer()}
       {visiblePosts.length ? (
         visiblePosts.map((post) => (
-          <article className="tg-post-row" key={post._id}>
+          <article
+            className={`tg-post-row${highlightedPostId === post._id ? " tg-post-highlighted" : ""}`}
+            key={post._id}
+            id={`post-${post._id}`}
+          >
             <div className="tg-post-headline">
               <div className="tg-post-author">
                 <Avatar src={getMediaUrl(post.author?.avatar)}>
@@ -1382,29 +1412,6 @@ const GroupsPage = () => {
                 Chia sẻ ({post.stats?.shares || 0})
               </Button>
             </div>
-            {canComment ? (
-              <div className="tg-comment-composer">
-                <Avatar size={32} src={getMediaUrl(userProfile?.avatar)}>
-                  {getInitials(displayName)}
-                </Avatar>
-                <Space.Compact className="tg-comment-input">
-                  <Input
-                    value={commentDrafts[post._id] || ""}
-                    onChange={(event) =>
-                      setCommentDrafts((prev) => ({
-                        ...prev,
-                        [post._id]: event.target.value,
-                      }))
-                    }
-                    onPressEnter={() => handleCommentPost(post._id)}
-                    placeholder="Viết bình luận..."
-                  />
-                  <Button onClick={() => handleCommentPost(post._id)}>Gửi</Button>
-                </Space.Compact>
-              </div>
-            ) : (
-              <div className="tg-comment-locked">Tham gia nhóm để bình luận.</div>
-            )}
             {renderGroupCommentList(post, { preview: true })}
           </article>
         ))

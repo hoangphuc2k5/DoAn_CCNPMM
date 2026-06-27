@@ -21,12 +21,14 @@ const ProfileHeader = ({
   onAddFriendClick,
   onAcceptFriendClick,
   onBlockClick,
+  onUnblockClick,
   onEditClick,
   isOwnProfile,
   pendingRequestsCount = 0,
   onIncomingRequestsClick,
   onUnfriendClick,
   onRejectFriendClick,
+  isBlocked = false,
 }) => {
   if (!profile) return null;
 
@@ -236,13 +238,22 @@ const ProfileHeader = ({
                 })()}
 
                 {/* Block Button */}
-                <Button
-                  className="btn-icon-only"
-                  danger
-                  icon={<StopOutlined />}
-                  onClick={onBlockClick}
-                  title="Chặn người dùng này"
-                />
+                {isBlocked ? (
+                  <Button
+                    className="btn-icon-only"
+                    icon={<StopOutlined />}
+                    onClick={onUnblockClick}
+                    title="Bỏ chặn người dùng này"
+                  />
+                ) : (
+                  <Button
+                    className="btn-icon-only"
+                    danger
+                    icon={<StopOutlined />}
+                    onClick={onBlockClick}
+                    title="Chặn người dùng này"
+                  />
+                )}
               </>
             )}
 

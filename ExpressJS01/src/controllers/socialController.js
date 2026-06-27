@@ -1,5 +1,6 @@
 const socialService = require("../services/socialService");
 const pushService = require("../services/pushService");
+const socketService = require("../services/socketService");
 const { processPostMediaFiles } = require("../services/mediaService");
 
 const currentUserId = (req) => req.user._id;
@@ -154,12 +155,54 @@ const unfriendUser = async (req, res) => {
 };
 
 const blockUser = async (req, res) => {
-  const data = await socialService.blockUser(currentUserId(req), req.params.targetUserId);
+  const userId = currentUserId(req);
+  const targetUserId = req.params.targetUserId;
+  const data = await socialService.blockUser(userId, targetUserId);
+  
+  if (data && data.EC === 0) {
+    // Emit socket event to notify the blocked user
+    socketService.emitBlockStatusChanged(userId, targetUserId, true);
+  }
+  
   return res.status(200).json(data);
 };
 
 const unblockUser = async (req, res) => {
-  const data = await socialService.unblockUser(currentUserId(req), req.params.targetUserId);
+  const userId = currentUserId(req);
+  const targetUserId = req.params.targetUserId;
+  const data = await socialService.unblockUser(userId, targetUserId);
+  
+  if (data && data.EC === 0) {
+    // Emit socket event to notify the unblocked user
+    socketService.emitBlockStatusChanged(userId, targetUserId, false);
+  }
+  
+  return res.status(200).json(data);
+};
+
+const restrictUser = async (req, res) => {
+  const userId = currentUserId(req);
+  const targetUserId = req.params.targetUserId;
+  const data = await socialService.restrictUser(userId, targetUserId);
+  
+  if (data && data.EC === 0) {
+    // Emit socket event to notify the restricted user
+    socketService.emitRestrictStatusChanged(userId, targetUserId, true);
+  }
+  
+  return res.status(200).json(data);
+};
+
+const unrestrictUser = async (req, res) => {
+  const userId = currentUserId(req);
+  const targetUserId = req.params.targetUserId;
+  const data = await socialService.unrestrictUser(userId, targetUserId);
+  
+  if (data && data.EC === 0) {
+    // Emit socket event to notify the unrestricted user
+    socketService.emitRestrictStatusChanged(userId, targetUserId, false);
+  }
+  
   return res.status(200).json(data);
 };
 
@@ -289,11 +332,13 @@ module.exports = {
   reportPost,
   reportUser,
   respondFriendRequest,
+  restrictUser,
   sendFriendRequest,
   sharePost,
   savePost,
   unblockUser,
   unfollowUser,
+  unrestrictUser,
   unsavePost,
   updatePost,
   pinPost,

@@ -1,13 +1,15 @@
 import { useState, useRef, useEffect } from "react";
-import { Modal, Avatar, Button, Dropdown, Typography, message } from "antd";
+import { Modal, Avatar, Button, Typography, message } from "antd";
 import {
   CloseOutlined,
   PictureOutlined,
   PlaySquareOutlined,
   SmileOutlined,
   EnvironmentOutlined,
-  CaretDownOutlined,
   DeleteOutlined,
+  GlobalOutlined,
+  LockOutlined,
+  TeamOutlined,
 } from "@ant-design/icons";
 import { createPostApi, updatePostApi, uploadPostMediaApi } from "../../util/api";
 import { getMediaUrl } from "../../util/media";
@@ -206,31 +208,11 @@ const CreatePostModal = ({ open, onCancel, onSuccess, currentUser, postToEdit })
 
   const isPostDisabled = !content.trim() && mediaFiles.length === 0;
 
-  const visibilityMenu = {
-    items: [
-      {
-        key: "public",
-        label: "🌐 Công khai",
-        onClick: () => setVisibility("public"),
-      },
-      {
-        key: "friends",
-        label: "👥 Bạn bè",
-        onClick: () => setVisibility("friends"),
-      },
-      {
-        key: "private",
-        label: "🔒 Riêng tư",
-        onClick: () => setVisibility("private"),
-      },
-    ],
-  };
-
-  const getVisibilityLabel = () => {
-    if (visibility === "friends") return "👥 Bạn bè";
-    if (visibility === "private") return "🔒 Riêng tư";
-    return "🌐 Công khai";
-  };
+  const privacyOptions = [
+    { value: "public", label: "Công khai", icon: <GlobalOutlined /> },
+    { value: "friends", label: "Bạn bè", icon: <TeamOutlined /> },
+    { value: "private", label: "Riêng tư", icon: <LockOutlined /> },
+  ];
 
   return (
     <Modal
@@ -298,14 +280,20 @@ const CreatePostModal = ({ open, onCancel, onSuccess, currentUser, postToEdit })
               <Text className="font-bold text-gray-900 text-sm">
                 {currentUser?.name || "Người Dùng"}
               </Text>
-              <Dropdown menu={visibilityMenu} trigger={["click"]}>
-                <Button
-                  size="small"
-                  className="mt-1 flex items-center gap-1 border border-purple-200 hover:border-purple-300 text-purple-600 rounded-full px-3 py-1 text-xs bg-purple-50 font-semibold"
-                >
-                  {getVisibilityLabel()} <CaretDownOutlined style={{ fontSize: "10px" }} />
-                </Button>
-              </Dropdown>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {privacyOptions.map((option) => (
+                  <Button
+                    key={option.value}
+                    type={visibility === option.value ? "primary" : "default"}
+                    onClick={() => setVisibility(option.value)}
+                    size="small"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 20 }}
+                  >
+                    {option.icon}
+                    <span>{option.label}</span>
+                  </Button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -314,7 +302,7 @@ const CreatePostModal = ({ open, onCancel, onSuccess, currentUser, postToEdit })
             type="textarea"
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="Bạn đang nghĩ gì thế?... dùng @ để mention"
+            placeholder="Bạn đang nghĩ gì thế?... dùng @ để nhắc bạn bè"
             rows={4}
           />
 

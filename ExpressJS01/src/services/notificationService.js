@@ -1,4 +1,5 @@
 const Block = require("../models/block");
+const Restriction = require("../models/restriction");
 const Notification = require("../models/notification");
 const User = require("../models/user");
 const emailService = require("./emailService");
@@ -28,6 +29,15 @@ const hasBlockBetween = async (userA, userB) => {
     ],
   });
   return Boolean(block);
+};
+
+const isActorRestricted = async (actor, recipient) => {
+  if (!actor || !recipient || String(actor) === String(recipient)) return false;
+  const restriction = await Restriction.findOne({
+    restrictor: recipient,
+    restricted: actor,
+  });
+  return Boolean(restriction);
 };
 
 const buildTarget = ({ type, post, comment, actor, metadata = {} }) => {
@@ -64,6 +74,8 @@ const getNotificationSummary = (notification) => {
 const createNotification = async ({ recipient, actor, type, post, comment, metadata = {} }) => {
   if (!recipient || (actor && String(recipient) === String(actor))) return null;
   if (actor && (await hasBlockBetween(recipient, actor))) return null;
+  // If actor is restricted by recipient, don't create notification
+  if (actor && (await isActorRestricted(actor, recipient))) return null;
 
   const enrichedMetadata = {
     ...metadata,
@@ -80,7 +92,11 @@ const createNotification = async ({ recipient, actor, type, post, comment, metad
   });
 
   const notification = await populateNotification(Notification.findById(created._id));
-  const unread = await Notification.countDocuments({ recipient, readAt: null });
+  const unread = await Notification.countDocuments({
+    recipient,
+    readAt: null,
+    type: { $ne: "new_message" },
+  });
 
   socketService.emitNotification(recipient, {
     notification,
