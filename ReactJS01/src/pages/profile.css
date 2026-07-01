@@ -45,6 +45,27 @@
   border-radius: 8px;
 }
 
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.profile-grid .label {
+  margin: 0;
+  color: #8c8c8c;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.profile-grid .value {
+  margin: 6px 0 0;
+  color: #262626;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .profile-item {
   display: flex;
   align-items: flex-start;
@@ -132,5 +153,9 @@
 
   .profile-form {
     max-width: 100%;
+  }
+
+  .profile-grid {
+    grid-template-columns: 1fr;
   }
 }
