@@ -165,6 +165,8 @@ cd ../ExpressJS01
 npm run seed:social
 ```
 
+File dữ liệu mẫu dạng tĩnh để tham khảo hoặc gắn vào seeder nằm tại [ExpressJS01/scripts/sampleData.js](ExpressJS01/scripts/sampleData.js).
+
 ## Mô Tả Luồng Chạy
 
 1. Người dùng mở frontend React.
@@ -240,3 +242,7 @@ Backend expose các nhóm endpoint dưới tiền tố `/v1/api/`:
 - Thêm ảnh chụp màn hình các màn hình chính.
 - Chuẩn hóa file `.env.example` cho backend và frontend.
 - Viết thêm tài liệu API chi tiết nếu cần bàn giao hoặc bảo trì.
+
+## Database Sheet
+
+Xem chi tiết toàn bộ collection, field, ref, enum và index tại [DATABASE_SHEET.md](DATABASE_SHEET.md).
