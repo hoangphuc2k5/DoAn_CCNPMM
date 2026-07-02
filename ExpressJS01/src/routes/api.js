@@ -26,6 +26,7 @@ const delay = require("../middleware/delay");
 const upload = require("../middleware/upload");
 const antiSpam = require("../middleware/antiSpam");
 const chatController = require("../controllers/chatController");
+const callController = require("../controllers/callController");
 const groupController = require("../controllers/groupController");
 const chatUpload = require("../middleware/chatUpload");
 const postMediaUpload = require("../middleware/postMediaUpload");
@@ -198,11 +199,17 @@ routerAPI.get("/conversations/unread-summary", chatController.getUnreadSummary);
 routerAPI.get("/conversations", chatController.getConversations);
 routerAPI.post("/conversations", chatController.createConversation);
 routerAPI.get("/conversations/:conversationId/messages", chatController.getMessages);
+routerAPI.get("/conversations/:conversationId/calls", callController.getCallHistory);
+routerAPI.post("/conversations/:conversationId/calls", callController.startCall);
 routerAPI.post(
   "/conversations/:conversationId/messages",
   chatUpload.array("attachments", 10),
   chatController.sendMessage
 );
+routerAPI.get("/calls/:callId", callController.getCallById);
+routerAPI.post("/calls/:callId/accept", callController.acceptCall);
+routerAPI.post("/calls/:callId/decline", callController.declineCall);
+routerAPI.post("/calls/:callId/hangup", callController.endCall);
 routerAPI.delete("/messages/:messageId", chatController.recallMessage);
 routerAPI.post("/conversations/:conversationId/seen", chatController.markSeen);
 

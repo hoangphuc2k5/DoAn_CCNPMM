@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+﻿const mongoose = require("mongoose");
 const Block = require("../models/block");
 const Comment = require("../models/comment");
 const Follow = require("../models/follow");
@@ -145,7 +145,9 @@ const decoratePosts = async (posts, currentUserId) => {
     .sort({ createdAt: 1 })
     .populate("author", "name email avatar")
     .lean();
-  const reactions = await Reaction.find({ post: { $in: postIds } }).lean();
+  const reactions = await Reaction.find({ post: { $in: postIds } })
+    .populate("user", "name email avatar")
+    .lean();
   const savedPostIds = new Set(
     (
       await SavedPost.find({
@@ -170,10 +172,26 @@ const decoratePosts = async (posts, currentUserId) => {
           (reply) => String(reply.parentComment) === String(comment._id),
         ),
       }));
-    const myReaction = reactions.find(
-      (reaction) =>
-        String(reaction.post) === String(post._id) &&
-        String(reaction.user) === String(currentUserId),
+    const postReactions = reactions.filter(
+      (reaction) => String(reaction.post) === String(post._id),
+    );
+    const reactionTypes = postReactions.reduce((acc, reaction) => {
+      acc[reaction.type] = (acc[reaction.type] || 0) + 1;
+      return acc;
+    }, {});
+    const reactionUsersByType = postReactions.reduce((acc, reaction) => {
+      if (!acc[reaction.type]) acc[reaction.type] = [];
+      acc[reaction.type].push({
+        _id: reaction.user?._id,
+        name: reaction.user?.name,
+        email: reaction.user?.email,
+        avatar: reaction.user?.avatar,
+        reactedAt: reaction.updatedAt || reaction.createdAt,
+      });
+      return acc;
+    }, {});
+    const myReaction = postReactions.find(
+      (reaction) => String(reaction.user?._id || reaction.user) === String(currentUserId),
     );
 
     const authorId = post.author?._id || post.author;
@@ -183,12 +201,11 @@ const decoratePosts = async (posts, currentUserId) => {
       ...postObject,
       comments: topComments,
       myReaction: myReaction?.type || null,
-      reactionTypes: reactions
-        .filter((reaction) => String(reaction.post) === String(post._id))
-        .reduce((acc, reaction) => {
-          acc[reaction.type] = (acc[reaction.type] || 0) + 1;
-          return acc;
-        }, {}),
+      reactionTypes,
+      reactionDetails: {
+        total: postReactions.length,
+        usersByType: reactionUsersByType,
+      },
       id: post._id,
       privacy: post.visibility || "public",
       likeCount: post.stats?.reactions || 0,
@@ -1136,3 +1153,4 @@ module.exports = {
   pinPost,
   unfriend,
 };
+

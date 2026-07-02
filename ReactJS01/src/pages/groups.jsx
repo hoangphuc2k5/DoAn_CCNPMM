@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import {
@@ -81,7 +81,30 @@ import {
 import { getMediaUrl } from "../util/media";
 import CreatePostComposer from "../components/post/CreatePostComposer";
 import PostCommentsModal from "../components/post/PostCommentsModal";
+import ReactionSummary from "../components/post/ReactionSummary";
+import MentionInput from "../components/ui/MentionInput";
+import { applyPostReaction } from "../util/reactions";
 
+const renderMentionContent = (text = "") => {
+  if (!text) return "";
+  const regex = /@\[([^\]]+)\]\(([^)]+)\)/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    parts.push(
+      <span key={`${match.index}-${match[2]}`} style={{ color: "#1677ff", fontWeight: 700 }}>
+        {match[1]}
+      </span>,
+    );
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts.length ? parts : text;
+};
 const normalizeMedia = (media = []) =>
   media
     .map((item) => {
@@ -434,8 +457,8 @@ const GroupsPage = () => {
     post?.author?._id === user?._id ||
     ["admin", "moderator"].includes(selectedGroup?.myRole);
 
-  const handleCommentPost = async (postId) => {
-    const content = commentDrafts[postId]?.trim();
+  const handleCommentPost = async (postId, contentOverride) => {
+    const content = (contentOverride ?? commentDrafts[postId] ?? "").trim();
     if (!content) return;
 
     const res = await commentPostApi(postId, content);
@@ -451,8 +474,8 @@ const GroupsPage = () => {
     }
   };
 
-  const handleReplyComment = async (postId, commentId) => {
-    const content = replyDrafts[commentId]?.trim();
+  const handleReplyComment = async (postId, commentId, contentOverride) => {
+    const content = (contentOverride ?? replyDrafts[commentId] ?? "").trim();
     if (!content) return;
 
     const res = await replyCommentApi(commentId, postId, content);
@@ -527,23 +550,13 @@ const GroupsPage = () => {
   const handleReactPost = async (post, type) => {
     const res = await reactPostApi(post._id, type);
     if (res?.EC === 0) {
-      updateGroupPost(post._id, (currentPost) => {
-        const hadReaction = Boolean(currentPost.myReaction);
-        const removedReaction = !res.data;
-        return {
-          ...currentPost,
-          myReaction: res.data?.type || null,
-          stats: {
-            ...currentPost.stats,
-            reactions:
-              res.data?.type && !hadReaction
-                ? (currentPost.stats?.reactions || 0) + 1
-                : removedReaction && hadReaction
-                  ? Math.max((currentPost.stats?.reactions || 0) - 1, 0)
-                  : currentPost.stats?.reactions || 0,
-          },
-        };
-      });
+      updateGroupPost(post._id, (currentPost) =>
+        applyPostReaction(currentPost, res.data?.type || null, {
+          ...user,
+          name: displayName,
+          avatar: userProfile?.avatar || user?.avatar,
+        }),
+      );
     } else {
       message.error(res?.EM || "Không thể thả cảm xúc");
     }
@@ -1265,12 +1278,13 @@ const GroupsPage = () => {
                   <div className="tg-comment-bubble">
                     <strong>{comment.author?.name || comment.author?.email}</strong>
                     <Typography.Paragraph className="mb-0">
-                      {comment.content}
+                      {renderMentionContent(comment.content)}
                     </Typography.Paragraph>
                   </div>
                   {!preview && canComment ? (
                     <Space.Compact className="tg-reply-input">
-                      <Input
+                      <MentionInput
+                        type="input"
                         value={replyDrafts[comment._id] || ""}
                         onChange={(event) =>
                           setReplyDrafts((prev) => ({
@@ -1278,7 +1292,7 @@ const GroupsPage = () => {
                             [comment._id]: event.target.value,
                           }))
                         }
-                        onPressEnter={() => handleReplyComment(post._id, comment._id)}
+                        onPressEnter={(raw) => handleReplyComment(post._id, comment._id, raw)}
                         placeholder="Trả lời..."
                       />
                       <Button onClick={() => handleReplyComment(post._id, comment._id)}>
@@ -1305,7 +1319,7 @@ const GroupsPage = () => {
                       <div className="tg-comment-bubble">
                         <strong>{reply.author?.name || reply.author?.email}</strong>
                         <Typography.Paragraph className="mb-0">
-                          {reply.content}
+                          {renderMentionContent(reply.content)}
                         </Typography.Paragraph>
                       </div>
                       {canDeleteComment(post, reply) ? (
@@ -1393,8 +1407,7 @@ const GroupsPage = () => {
                   <span className="tg-reaction-icon">
                     {getReactionOption(post.myReaction).icon}
                   </span>
-                  {post.myReaction ? getReactionOption(post.myReaction).label : "Thích"} (
-                  {post.stats?.reactions || 0})
+                  {post.myReaction ? getReactionOption(post.myReaction).label : "Thích"}
                 </Button>
               </Popover>
               <Button
@@ -1833,3 +1846,4 @@ const GroupsPage = () => {
 };
 
 export default GroupsPage;
+

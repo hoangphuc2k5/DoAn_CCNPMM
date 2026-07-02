@@ -98,6 +98,48 @@ const initSocket = (server) => {
       }
     });
 
+    socket.on("call:join", ({ callId }) => {
+      if (callId) {
+        socket.join(callId.toString());
+      }
+    });
+
+    socket.on("call:leave", ({ callId }) => {
+      if (callId) {
+        socket.leave(callId.toString());
+      }
+    });
+
+    socket.on("call:offer", ({ callId, offer }) => {
+      if (callId) {
+        socket.to(callId.toString()).emit("call:offer", {
+          callId: callId.toString(),
+          offer,
+          fromUserId: userId,
+        });
+      }
+    });
+
+    socket.on("call:answer", ({ callId, answer }) => {
+      if (callId) {
+        socket.to(callId.toString()).emit("call:answer", {
+          callId: callId.toString(),
+          answer,
+          fromUserId: userId,
+        });
+      }
+    });
+
+    socket.on("call:ice-candidate", ({ callId, candidate }) => {
+      if (callId) {
+        socket.to(callId.toString()).emit("call:ice-candidate", {
+          callId: callId.toString(),
+          candidate,
+          fromUserId: userId,
+        });
+      }
+    });
+
     // Disconnect
     socket.on("disconnect", () => {
       console.log(`User disconnected from socket: ${socket.user.name}`);
@@ -189,6 +231,76 @@ const emitChatUnreadUpdated = (userId, summary) => {
   ioInstance.to(userId.toString()).emit("chat_unread_updated", summary);
 };
 
+const emitCallIncoming = (call) => {
+  if (!ioInstance || !call) return;
+  const payload = toSocketPayload(call);
+  const callerId = payload.caller?._id || payload.caller;
+  const calleeId = payload.callee?._id || payload.callee;
+
+  if (callerId) {
+    ioInstance.to(callerId.toString()).emit("call:outgoing", payload);
+  }
+  if (calleeId) {
+    ioInstance.to(calleeId.toString()).emit("call:incoming", payload);
+  }
+};
+
+const emitCallAccepted = (call) => {
+  if (!ioInstance || !call) return;
+  const payload = toSocketPayload(call);
+  const callerId = payload.caller?._id || payload.caller;
+  const calleeId = payload.callee?._id || payload.callee;
+
+  if (callerId) {
+    ioInstance.to(callerId.toString()).emit("call:accepted", payload);
+  }
+  if (calleeId) {
+    ioInstance.to(calleeId.toString()).emit("call:accepted", payload);
+  }
+};
+
+const emitCallDeclined = (call) => {
+  if (!ioInstance || !call) return;
+  const payload = toSocketPayload(call);
+  const callerId = payload.caller?._id || payload.caller;
+  const calleeId = payload.callee?._id || payload.callee;
+
+  if (callerId) {
+    ioInstance.to(callerId.toString()).emit("call:declined", payload);
+  }
+  if (calleeId) {
+    ioInstance.to(calleeId.toString()).emit("call:declined", payload);
+  }
+};
+
+const emitCallEnded = (call) => {
+  if (!ioInstance || !call) return;
+  const payload = toSocketPayload(call);
+  const callerId = payload.caller?._id || payload.caller;
+  const calleeId = payload.callee?._id || payload.callee;
+
+  if (callerId) {
+    ioInstance.to(callerId.toString()).emit("call:ended", payload);
+  }
+  if (calleeId) {
+    ioInstance.to(calleeId.toString()).emit("call:ended", payload);
+  }
+};
+
+const emitCallMissed = (call) => {
+  if (!ioInstance || !call) return;
+  const payload = toSocketPayload(call);
+  const callerId = payload.caller?._id || payload.caller;
+  const calleeId = payload.callee?._id || payload.callee;
+
+  if (callerId) {
+    ioInstance.to(callerId.toString()).emit("call:missed", payload);
+  }
+  if (calleeId) {
+    ioInstance.to(calleeId.toString()).emit("call:missed", payload);
+  }
+};
+
 const emitBlockStatusChanged = (userId, targetUserId, isBlocked) => {
   if (!ioInstance || !userId || !targetUserId) return;
   // Gửi cho người bị chặn/bỏ chặn để họ biết trạng thái thay đổi
@@ -217,6 +329,11 @@ module.exports = {
   emitSeenMessage,
   emitNotification,
   emitChatUnreadUpdated,
+  emitCallIncoming,
+  emitCallAccepted,
+  emitCallDeclined,
+  emitCallEnded,
+  emitCallMissed,
   emitBlockStatusChanged,
   emitRestrictStatusChanged,
 };

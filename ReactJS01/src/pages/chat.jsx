@@ -42,7 +42,12 @@ import {
   getConversationsApi,
   createConversationApi,
   getMessagesApi,
+  getCallHistoryApi,
+  startCallApi,
   sendMessageApi,
+  acceptCallApi,
+  declineCallApi,
+  hangupCallApi,
   recallMessageApi,
   markSeenApi,
   getRelationshipsApi,
@@ -112,6 +117,43 @@ const applyUnreadSummary = (conversations, summary) => {
     ...conv,
     unreadCount: summary.byConversation[getConvId(conv)] || 0,
   }));
+};
+
+const getOtherParticipant = (conversation, currentUserId) => {
+  if (!conversation || conversation.isGroup) return null;
+  return conversation.participants?.find((participant) => participant._id !== currentUserId) || null;
+};
+
+const formatCallDuration = (seconds = 0) => {
+  const totalSeconds = Math.max(0, Math.floor(seconds || 0));
+  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+  const remainingSeconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${minutes}:${remainingSeconds}`;
+};
+
+const getCallStatusLabel = (status) => {
+  switch (status) {
+    case "active":
+      return "Đang gọi";
+    case "ringing":
+      return "Đang đổ chuông";
+    case "missed":
+      return "Cuộc gọi nhỡ";
+    case "declined":
+      return "Đã từ chối";
+    case "canceled":
+      return "Đã hủy";
+    case "ended":
+      return "Đã kết thúc";
+    default:
+      return "Cuộc gọi";
+  }
+};
+
+const CALL_WINDOW_WIDTHS = {
+  compact: 420,
+  medium: 720,
+  large: 980,
 };
 
 const ChatPage = () => {
@@ -205,14 +247,31 @@ const ChatPage = () => {
 
   // Staged Files
   const [fileList, setFileList] = useState([]);
+  const [callHistory, setCallHistory] = useState([]);
+  const [callSession, setCallSession] = useState(null);
+  const [callWindowSize, setCallWindowSize] = useState("medium");
+  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(false);
 
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const selectedConvRef = useRef(null);
+  const peerConnectionRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
+  const pendingIceCandidatesRef = useRef([]);
+  const callSessionRef = useRef(null);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
 
   useEffect(() => {
     selectedConvRef.current = selectedConv;
   }, [selectedConv]);
+
+  useEffect(() => {
+    callSessionRef.current = callSession;
+  }, [callSession]);
 
   const applyRecalledMessageUpdate = useCallback((recalledMsg) => {
     const recalledId = getMessageId(recalledMsg);
@@ -453,11 +512,176 @@ const ChatPage = () => {
       });
     };
 
+    const handleCallIncoming = (payload) => {
+      if (!payload?._id || callSessionRef.current) return;
+
+      const callerId = getConvId(payload.caller);
+      const calleeId = getConvId(payload.callee);
+      const currentUserId = currentUser?._id?.toString();
+      const peerUser = callerId === currentUserId ? payload.callee : payload.caller;
+      const conversation = payload.conversation || selectedConvRef.current;
+
+      setCallSession({
+        callId: payload._id,
+        conversationId: conversation?._id || payload.conversation,
+        type: payload.type,
+        role: calleeId === currentUserId ? "callee" : "caller",
+        status: payload.status || "ringing",
+        peerUser,
+        call: payload,
+      });
+    };
+
+    const handleCallOutgoing = (payload) => {
+      if (!payload?._id) return;
+
+      const currentUserId = currentUser?._id?.toString();
+      if (getConvId(payload.caller) !== currentUserId) return;
+
+      const peerUser = payload.callee;
+      const conversation = payload.conversation || selectedConvRef.current;
+
+      setCallSession((prev) =>
+        prev && prev.callId === payload._id
+          ? { ...prev, status: payload.status || prev.status, call: payload }
+          : {
+              callId: payload._id,
+              conversationId: conversation?._id || payload.conversation,
+              type: payload.type,
+              role: "caller",
+              status: payload.status || "ringing",
+              peerUser,
+              call: payload,
+            }
+      );
+    };
+
+    const handleCallAccepted = async (payload) => {
+      const currentSession = callSessionRef.current;
+      if (!currentSession || currentSession.callId !== payload._id) return;
+
+      if (socket) {
+        socket.emit("call:join", { callId: payload._id });
+      }
+
+      setCallSession((prev) =>
+        prev && prev.callId === payload._id
+          ? { ...prev, status: "active", call: payload }
+          : prev
+      );
+
+      if (currentSession.role !== "caller") {
+        return;
+      }
+
+      if (!peerConnectionRef.current) {
+        peerConnectionRef.current = createPeerConnection(payload._id);
+        attachLocalTracks(peerConnectionRef.current);
+      }
+
+      try {
+        const offer = await peerConnectionRef.current.createOffer();
+        await peerConnectionRef.current.setLocalDescription(offer);
+        socket.emit("call:offer", { callId: payload._id, offer });
+      } catch (error) {
+        console.error("Failed to create call offer:", error);
+      }
+    };
+
+    const handleCallOffer = async ({ callId, offer }) => {
+      const currentSession = callSessionRef.current;
+      if (!currentSession || currentSession.callId !== callId || currentSession.role !== "callee") {
+        return;
+      }
+
+      if (!peerConnectionRef.current) {
+        return;
+      }
+
+      try {
+        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(offer));
+        while (pendingIceCandidatesRef.current.length > 0) {
+          const nextCandidate = pendingIceCandidatesRef.current.shift();
+          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(nextCandidate));
+        }
+
+        const answer = await peerConnectionRef.current.createAnswer();
+        await peerConnectionRef.current.setLocalDescription(answer);
+        socket.emit("call:answer", { callId, answer });
+        setCallSession((prev) => (prev && prev.callId === callId ? { ...prev, status: "active" } : prev));
+      } catch (error) {
+        console.error("Failed to handle call offer:", error);
+      }
+    };
+
+    const handleCallAnswer = async ({ callId, answer }) => {
+      const currentSession = callSessionRef.current;
+      if (!currentSession || currentSession.callId !== callId || currentSession.role !== "caller") {
+        return;
+      }
+
+      if (!peerConnectionRef.current) {
+        return;
+      }
+
+      try {
+        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+        while (pendingIceCandidatesRef.current.length > 0) {
+          const nextCandidate = pendingIceCandidatesRef.current.shift();
+          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(nextCandidate));
+        }
+
+        setCallSession((prev) => (prev && prev.callId === callId ? { ...prev, status: "active" } : prev));
+      } catch (error) {
+        console.error("Failed to handle call answer:", error);
+      }
+    };
+
+    const handleCallIceCandidate = async ({ callId, candidate }) => {
+      const currentSession = callSessionRef.current;
+      if (!currentSession || currentSession.callId !== callId || !peerConnectionRef.current) {
+        return;
+      }
+
+      try {
+        if (peerConnectionRef.current.remoteDescription) {
+          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        } else {
+          pendingIceCandidatesRef.current.push(candidate);
+        }
+      } catch (error) {
+        console.error("Failed to add ICE candidate:", error);
+      }
+    };
+
+    const handleCallTerminated = async (payload) => {
+      const currentSession = callSessionRef.current;
+      if (!currentSession || currentSession.callId !== payload._id) return;
+
+      const status = payload.status;
+      if (status === "missed") {
+        antdMessage.warning("Bạn có một cuộc gọi nhỡ");
+      } else if (status === "declined") {
+        antdMessage.info("Cuộc gọi đã bị từ chối");
+      }
+
+      await closeCallSession({ refreshHistory: true });
+    };
+
     socket.on("receive_message", handleReceiveMessage);
     socket.on("message_seen", handleMessageSeen);
     socket.on("typing", handleTyping);
     socket.on("stop_typing", handleStopTyping);
     socket.on("conversation_updated", handleConversationUpdated);
+    socket.on("call:incoming", handleCallIncoming);
+    socket.on("call:outgoing", handleCallOutgoing);
+    socket.on("call:accepted", handleCallAccepted);
+    socket.on("call:offer", handleCallOffer);
+    socket.on("call:answer", handleCallAnswer);
+    socket.on("call:ice-candidate", handleCallIceCandidate);
+    socket.on("call:declined", handleCallTerminated);
+    socket.on("call:ended", handleCallTerminated);
+    socket.on("call:missed", handleCallTerminated);
 
     return () => {
       socket.off("receive_message", handleReceiveMessage);
@@ -465,8 +689,17 @@ const ChatPage = () => {
       socket.off("typing", handleTyping);
       socket.off("stop_typing", handleStopTyping);
       socket.off("conversation_updated", handleConversationUpdated);
+      socket.off("call:incoming", handleCallIncoming);
+      socket.off("call:outgoing", handleCallOutgoing);
+      socket.off("call:accepted", handleCallAccepted);
+      socket.off("call:offer", handleCallOffer);
+      socket.off("call:answer", handleCallAnswer);
+      socket.off("call:ice-candidate", handleCallIceCandidate);
+      socket.off("call:declined", handleCallTerminated);
+      socket.off("call:ended", handleCallTerminated);
+      socket.off("call:missed", handleCallTerminated);
     };
-  }, [socket, currentUser, refreshChatUnread]);
+  }, [currentUser, refreshChatUnread, socket]);
 
   // Join/leave rooms
   useEffect(() => {
@@ -519,15 +752,306 @@ const ChatPage = () => {
     setLoadingMsgs(false);
   };
 
+  const fetchCallHistory = async (conversationId) => {
+    const res = await getCallHistoryApi(conversationId);
+    if (res && res.EC === 0) {
+      setCallHistory(res.data || []);
+    } else {
+      setCallHistory([]);
+    }
+  };
+
+  const cleanupCallResources = useCallback(
+    (leaveRoom = true) => {
+      const currentSession = callSessionRef.current;
+
+      if (leaveRoom && socket && currentSession?.callId) {
+        socket.emit("call:leave", { callId: currentSession.callId });
+      }
+
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.ontrack = null;
+        peerConnectionRef.current.onicecandidate = null;
+        peerConnectionRef.current.onconnectionstatechange = null;
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
+      }
+
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
+        localStreamRef.current = null;
+      }
+
+      remoteStreamRef.current = null;
+      pendingIceCandidatesRef.current = [];
+      setIsMicMuted(false);
+      setIsCameraOff(false);
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = null;
+      }
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = null;
+      }
+    },
+    [socket]
+  );
+
+  const closeCallSession = useCallback(
+    async ({ refreshHistory = true } = {}) => {
+      cleanupCallResources(true);
+      setCallSession(null);
+
+      if (refreshHistory && selectedConvRef.current?._id) {
+        await fetchCallHistory(selectedConvRef.current._id);
+      }
+    },
+    [cleanupCallResources]
+  );
+
+  const ensureLocalStream = useCallback(async (mediaType) => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: mediaType === "video",
+    });
+
+    localStreamRef.current = stream;
+
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = stream;
+    }
+
+    setIsMicMuted(false);
+    setIsCameraOff(false);
+
+    return stream;
+  }, []);
+
+  const setMicrophoneEnabled = useCallback((enabled) => {
+    if (!localStreamRef.current) return;
+    localStreamRef.current.getAudioTracks().forEach((track) => {
+      track.enabled = enabled;
+    });
+    setIsMicMuted(!enabled);
+  }, []);
+
+  const setCameraEnabled = useCallback((enabled) => {
+    if (!localStreamRef.current) return;
+    localStreamRef.current.getVideoTracks().forEach((track) => {
+      track.enabled = enabled;
+    });
+    setIsCameraOff(!enabled);
+    if (localVideoRef.current) {
+      localVideoRef.current.style.display = enabled ? "block" : "none";
+    }
+  }, []);
+
+  const attachLocalTracks = useCallback((peerConnection) => {
+    const stream = localStreamRef.current;
+    if (!peerConnection || !stream) return;
+
+    stream.getTracks().forEach((track) => {
+      peerConnection.addTrack(track, stream);
+    });
+  }, []);
+
+  const createPeerConnection = useCallback(
+    (callId) => {
+      const peerConnection = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:global.stun.twilio.com:3478" },
+        ],
+      });
+
+      peerConnection.onicecandidate = ({ candidate }) => {
+        if (candidate && socket) {
+          socket.emit("call:ice-candidate", { callId, candidate });
+        }
+      };
+
+      peerConnection.ontrack = (event) => {
+        if (!remoteStreamRef.current) {
+          remoteStreamRef.current = new MediaStream();
+        }
+
+        event.streams[0]?.getTracks?.().forEach((track) => {
+          if (!remoteStreamRef.current.getTracks().some((item) => item.id === track.id)) {
+            remoteStreamRef.current.addTrack(track);
+          }
+        });
+
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remoteStreamRef.current;
+        }
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = remoteStreamRef.current;
+          remoteAudioRef.current.play?.().catch(() => undefined);
+        }
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        if (["failed", "disconnected", "closed"].includes(peerConnection.connectionState)) {
+          closeCallSession({ refreshHistory: true }).catch(() => undefined);
+        }
+      };
+
+      return peerConnection;
+    },
+    [cleanupCallResources, socket]
+  );
+
+  const waitForRemoteAnswer = useCallback(async (peerConnection, description) => {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(description));
+    while (pendingIceCandidatesRef.current.length > 0) {
+      const nextCandidate = pendingIceCandidatesRef.current.shift();
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(nextCandidate));
+      } catch (error) {
+        console.error("Failed to add buffered ICE candidate:", error);
+      }
+    }
+  }, []);
+
+  const startOutgoingCall = useCallback(
+    async (mediaType) => {
+      if (!selectedConv || selectedConv.isGroup) {
+        antdMessage.info("Chỉ hỗ trợ gọi trong cuộc trò chuyện cá nhân");
+        return;
+      }
+
+      const details = getConvDetails(selectedConv);
+      if (details.isBlockedByMe || details.isBlockedMe) {
+        antdMessage.error("Bạn không thể gọi vì hai bên đang bị chặn");
+        return;
+      }
+
+      const peerUser = getOtherParticipant(selectedConv, currentUser?._id);
+      if (!peerUser?._id) {
+        antdMessage.error("Không tìm thấy người nhận cuộc gọi");
+        return;
+      }
+
+      try {
+        await ensureLocalStream(mediaType);
+
+        const res = await startCallApi(selectedConv._id, { type: mediaType });
+        if (!res || res.EC !== 0) {
+          throw new Error(res?.EM || "Không thể bắt đầu cuộc gọi");
+        }
+
+        const call = res.data;
+        const peerConnection = createPeerConnection(call._id);
+        peerConnectionRef.current = peerConnection;
+        attachLocalTracks(peerConnection);
+
+        if (socket) {
+          socket.emit("call:join", { callId: call._id });
+        }
+
+        setCallSession({
+          callId: call._id,
+          conversationId: selectedConv._id,
+          type: mediaType,
+          role: "caller",
+          status: "ringing",
+          peerUser,
+          call,
+        });
+      } catch (error) {
+        console.error(error);
+        cleanupCallResources();
+        antdMessage.error(error?.message || "Không thể khởi tạo cuộc gọi");
+      }
+    },
+    [attachLocalTracks, cleanupCallResources, createPeerConnection, currentUser?._id, ensureLocalStream, getConvDetails, selectedConv, socket]
+  );
+
+  const acceptIncomingCall = useCallback(async () => {
+    const currentSession = callSessionRef.current;
+    if (!currentSession) return;
+
+    try {
+      await ensureLocalStream(currentSession.type);
+
+      const peerConnection = createPeerConnection(currentSession.callId);
+      peerConnectionRef.current = peerConnection;
+      attachLocalTracks(peerConnection);
+
+      if (socket) {
+        socket.emit("call:join", { callId: currentSession.callId });
+      }
+
+      setCallSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "connecting",
+            }
+          : prev
+      );
+
+      const res = await acceptCallApi(currentSession.callId);
+      if (!res || res.EC !== 0) {
+        throw new Error(res?.EM || "Không thể chấp nhận cuộc gọi");
+      }
+    } catch (error) {
+      console.error(error);
+      await declineCallApi(currentSession.callId).catch(() => undefined);
+      cleanupCallResources();
+      setCallSession(null);
+      antdMessage.error(error?.message || "Không thể chấp nhận cuộc gọi");
+    }
+  }, [attachLocalTracks, cleanupCallResources, createPeerConnection, ensureLocalStream, socket]);
+
+  const declineIncomingCall = useCallback(async () => {
+    const currentSession = callSessionRef.current;
+    if (!currentSession) return;
+
+    try {
+      await declineCallApi(currentSession.callId);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      await closeCallSession({ refreshHistory: true });
+    }
+  }, [closeCallSession]);
+
+  const endCurrentCall = useCallback(async () => {
+    const currentSession = callSessionRef.current;
+    if (!currentSession) return;
+
+    try {
+      await hangupCallApi(currentSession.callId);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      await closeCallSession({ refreshHistory: true });
+    }
+  }, [closeCallSession]);
+
+  const toggleMicrophone = useCallback(() => {
+    setMicrophoneEnabled(isMicMuted);
+  }, [isMicMuted, setMicrophoneEnabled]);
+
+  const toggleCamera = useCallback(() => {
+    setCameraEnabled(isCameraOff);
+  }, [isCameraOff, setCameraEnabled]);
+
   const selectConversation = (conv) => {
     setSelectedConv(conv);
     setTypingUsers([]);
     setMessageInput("");
     setFileList([]);
+    setCallSession(null);
     setConversations((prev) =>
       prev.map((c) => (getConvId(c) === getConvId(conv) ? { ...c, unreadCount: 0 } : c))
     );
     fetchMessages(conv._id);
+    fetchCallHistory(conv._id);
     markSeenApi(conv._id).then(() => refreshChatUnread());
   };
 
@@ -1226,10 +1750,10 @@ const ChatPage = () => {
               {/* Icon actions */}
               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 <Tooltip title="Gọi điện">
-                  <Button type="text" shape="circle" icon={<PhoneOutlined style={{ fontSize: 18, color: "#65676b" }} />} onClick={() => showNotSupportedMessage("Gọi điện")} />
+                  <Button type="text" shape="circle" icon={<PhoneOutlined style={{ fontSize: 18, color: "#65676b" }} />} onClick={() => startOutgoingCall("audio")} disabled={selectedConv.isGroup} />
                 </Tooltip>
                 <Tooltip title="Gọi Video">
-                  <Button type="text" shape="circle" icon={<VideoCameraOutlined style={{ fontSize: 18, color: "#65676b" }} />} onClick={() => showNotSupportedMessage("Gọi Video")} />
+                  <Button type="text" shape="circle" icon={<VideoCameraOutlined style={{ fontSize: 18, color: "#65676b" }} />} onClick={() => startOutgoingCall("video")} disabled={selectedConv.isGroup} />
                 </Tooltip>
                 <Tooltip title={showRightPanel ? "Ẩn thông tin" : "Hiện thông tin"}>
                   <Button
@@ -1518,6 +2042,52 @@ const ChatPage = () => {
             </Tooltip>
           </div>
 
+          <div className="right-sidebar-section">
+            <div className="right-sidebar-section-title">Lịch sử cuộc gọi</div>
+            {callHistory.length > 0 ? (
+              <List
+                size="small"
+                dataSource={callHistory.slice(0, 6)}
+                renderItem={(item) => {
+                  const currentUserId = getConvId(currentUser);
+                  const isIncoming = getConvId(item.callee) === currentUserId;
+                  const otherPerson = isIncoming ? item.caller : item.callee;
+                  const isMissed = item.status === "missed";
+                  const isDeclined = item.status === "declined";
+                  const isEnded = item.status === "ended";
+
+                  return (
+                    <List.Item style={{ paddingInline: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%" }}>
+                        <Avatar
+                          size={34}
+                          src={getMediaUrl(otherPerson?.avatar)}
+                          style={{ backgroundColor: "#7F00FD", flexShrink: 0 }}
+                        >
+                          {getInitial(otherPerson?.name)}
+                        </Avatar>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#1c1e21" }} className="truncate">
+                            {otherPerson?.name || "Người dùng"}
+                          </div>
+                          <div style={{ fontSize: 11, color: isMissed ? "#d4380d" : isDeclined ? "#d46b08" : "#8c8c8c" }}>
+                            {getCallStatusLabel(item.status)} · {item.type === "video" ? "Video" : "Thoại"}
+                            {isEnded && item.durationSeconds > 0 ? ` · ${formatCallDuration(item.durationSeconds)}` : ""}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 10, color: "#8c8c8c", flexShrink: 0 }}>
+                          {dayjs(item.createdAt).format("DD/MM HH:mm")}
+                        </span>
+                      </div>
+                    </List.Item>
+                  );
+                }}
+              />
+            ) : (
+              <div style={{ fontSize: 12, color: "gray", padding: "4px 0" }}>Chưa có cuộc gọi nào</div>
+            )}
+          </div>
+
           {/* File phương tiện */}
           <div className="right-sidebar-section">
             <div className="right-sidebar-section-title">
@@ -1653,6 +2223,139 @@ const ChatPage = () => {
           )}
         </div>
       )}
+
+      <Modal
+        title={callSession?.role === "callee" && callSession?.status === "ringing" ? "Cuộc gọi đến" : "Cuộc gọi"}
+        open={Boolean(callSession)}
+        footer={null}
+        maskClosable={false}
+        closable={false}
+        destroyOnHidden
+        width={CALL_WINDOW_WIDTHS[callWindowSize] || CALL_WINDOW_WIDTHS.medium}
+        style={{ top: 24 }}
+        className="call-modal-window"
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: "none" }} />
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+              <Avatar size={52} src={getMediaUrl(callSession?.peerUser?.avatar)} style={{ backgroundColor: "#7F00FD", fontSize: 22, fontWeight: 700 }}>
+                {getInitial(callSession?.peerUser?.name)}
+              </Avatar>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: "#1c1e21" }} className="truncate">
+                  {callSession?.peerUser?.name || "Người dùng"}
+                </div>
+                <div style={{ color: "#6b7280", fontSize: 12 }}>
+                  {getCallStatusLabel(callSession?.status)} · {callSession?.type === "video" ? "Video call" : "Voice call"}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <Button size="small" className={callWindowSize === "compact" ? "ant-btn-primary" : ""} onClick={() => setCallWindowSize("compact")}>Nhỏ</Button>
+              <Button size="small" className={callWindowSize === "medium" ? "ant-btn-primary" : ""} onClick={() => setCallWindowSize("medium")}>Vừa</Button>
+              <Button size="small" className={callWindowSize === "large" ? "ant-btn-primary" : ""} onClick={() => setCallWindowSize("large")}>Lớn</Button>
+            </div>
+          </div>
+
+          {callSession?.type === "video" ? (
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: callWindowSize === "compact" ? "1fr" : "minmax(0, 1fr) 170px", alignItems: "stretch" }}>
+              <div style={{ position: "relative", borderRadius: 18, overflow: "hidden", minHeight: callWindowSize === "compact" ? 320 : 460, background: "linear-gradient(180deg, #0f172a, #111827)" }}>
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  style={{ width: "100%", height: "100%", minHeight: callWindowSize === "compact" ? 320 : 460, objectFit: "cover" }}
+                />
+                {!remoteStreamRef.current && (
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", background: "linear-gradient(180deg, rgba(15,23,42,0.28), rgba(15,23,42,0.72))", textAlign: "center", padding: 20 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{callSession?.status === "ringing" ? "Đang chờ trả lời" : "Đang kết nối"}</div>
+                      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>Audio vẫn chạy ở nền, video sẽ hiện khi cả hai bên kết nối.</div>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0.16))" }} />
+
+                <div style={{ position: "absolute", left: 16, top: 16, padding: "6px 10px", borderRadius: 999, background: "rgba(0,0,0,0.35)", color: "#fff", fontSize: 12, fontWeight: 700 }}>
+                  {callSession?.type === "video" ? "VIDEO" : "AUDIO"}
+                </div>
+
+                <div style={{ position: "absolute", left: 16, right: 16, bottom: 16, display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
+                  <div style={{ color: "#fff" }}>
+                    <div style={{ fontSize: 16, fontWeight: 800 }}>{callSession?.peerUser?.name || "Người dùng"}</div>
+                    <div style={{ fontSize: 12, opacity: 0.85 }}>{callSession?.status === "active" ? "Đang trong cuộc gọi" : "Chờ kết nối"}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Button shape="circle" size="large" onClick={toggleMicrophone} className={isMicMuted ? "ant-btn-dangerous" : ""} title={isMicMuted ? "Bật mic" : "Tắt mic"}>
+                      <StopOutlined />
+                    </Button>
+                    <Button shape="circle" size="large" onClick={toggleCamera} className={isCameraOff ? "ant-btn-dangerous" : ""} title={isCameraOff ? "Bật camera" : "Tắt camera"}>
+                      <VideoCameraOutlined />
+                    </Button>
+                  </div>
+                </div>
+
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{ position: "absolute", right: 16, bottom: 16, width: callWindowSize === "compact" ? 110 : 150, height: callWindowSize === "compact" ? 150 : 200, objectFit: "cover", borderRadius: 14, border: "2px solid rgba(255,255,255,0.85)", boxShadow: "0 12px 24px rgba(0,0,0,0.35)", display: isCameraOff ? "none" : "block", transform: "scaleX(-1)" }}
+                />
+              </div>
+
+              {callWindowSize !== "compact" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, borderRadius: 18, padding: 12, background: "linear-gradient(180deg, #f8fafc, #eef2ff)", border: "1px solid #e5e7eb" }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#111827" }}>Bố cục kiểu Facebook</div>
+                  <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.6 }}>
+                    Khung lớn dành cho người đang nói. Ảnh preview của bạn nằm góc dưới, có thể tắt/mở mic và camera ngay tại đây.
+                  </div>
+                  <div style={{ marginTop: "auto", display: "grid", gap: 8 }}>
+                    <Button onClick={toggleMicrophone}>{isMicMuted ? "Bật mic" : "Tắt mic"}</Button>
+                    <Button onClick={toggleCamera}>{isCameraOff ? "Bật camera" : "Tắt camera"}</Button>
+                    <Button danger type="primary" onClick={endCurrentCall}>Kết thúc</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 180, borderRadius: 18, background: "radial-gradient(circle at top, rgba(66,183,42,0.12), transparent 55%), linear-gradient(135deg, rgba(127,0,253,0.08), rgba(24,119,242,0.08))" }}>
+              <div style={{ textAlign: "center", width: "100%" }}>
+                <div style={{ width: 92, height: 92, margin: "0 auto", borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #7F00FD, #1877f2)", color: "#fff", boxShadow: "0 18px 36px rgba(24, 119, 242, 0.22)" }}>
+                  <PhoneOutlined style={{ fontSize: 38 }} />
+                </div>
+                <div style={{ marginTop: 14, color: "#111827", fontWeight: 800, fontSize: 16 }}>
+                  {callSession?.status === "ringing" ? "Đang đổ chuông" : "Đang gọi"}
+                </div>
+                <div style={{ color: "#6b7280", fontSize: 12, marginTop: 6 }}>
+                  Âm thanh sẽ phát qua nền, kể cả khi không bật video.
+                </div>
+                <div style={{ marginTop: 16, display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
+                  <Button onClick={toggleMicrophone}>{isMicMuted ? "Bật mic" : "Tắt mic"}</Button>
+                  <Button danger type="primary" shape="round" onClick={endCurrentCall}>
+                    Kết thúc cuộc gọi
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {callSession?.role === "callee" && callSession?.status === "ringing" && (
+            <div style={{ display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap" }}>
+              <Button danger type="primary" shape="round" onClick={declineIncomingCall}>
+                Từ chối
+              </Button>
+              <Button type="primary" shape="round" onClick={acceptIncomingCall} style={{ backgroundColor: "#42b72a" }}>
+                Trả lời
+              </Button>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* Modal 1-1 Chat Selection */}
       <Modal

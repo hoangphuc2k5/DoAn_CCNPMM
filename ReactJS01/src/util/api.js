@@ -72,8 +72,16 @@ const getChatUnreadSummaryApi = () => axios.get("/v1/api/conversations/unread-su
 const createConversationApi = (payload) => axios.post("/v1/api/conversations", payload);
 const getMessagesApi = (conversationId, params) =>
   axios.get(`/v1/api/conversations/${conversationId}/messages`, { params });
+const getCallHistoryApi = (conversationId, params) =>
+  axios.get(`/v1/api/conversations/${conversationId}/calls`, { params });
+const startCallApi = (conversationId, payload) =>
+  axios.post(`/v1/api/conversations/${conversationId}/calls`, payload);
 const sendMessageApi = (conversationId, payload) =>
   axios.post(`/v1/api/conversations/${conversationId}/messages`, payload);
+const getCallApi = (callId) => axios.get(`/v1/api/calls/${callId}`);
+const acceptCallApi = (callId) => axios.post(`/v1/api/calls/${callId}/accept`);
+const declineCallApi = (callId) => axios.post(`/v1/api/calls/${callId}/decline`);
+const hangupCallApi = (callId) => axios.post(`/v1/api/calls/${callId}/hangup`);
 const recallMessageApi = (messageId) => axios.delete(`/v1/api/messages/${messageId}`);
 const markSeenApi = (conversationId) => axios.post(`/v1/api/conversations/${conversationId}/seen`);
 
@@ -148,6 +156,8 @@ export {
   getAdminLogsApi,
   getCaptchaApi,
   getChatUnreadSummaryApi,
+  getCallHistoryApi,
+  getCallApi,
   getConversationsApi,
   getDeviceHistoryApi,
   getFeedApi,
@@ -174,9 +184,13 @@ export {
   leaveGroupEventApi,
   loginApi,
   logoutApi,
+  startCallApi,
   markAllNotificationsReadApi,
   markNotificationReadApi,
   markSeenApi,
+  acceptCallApi,
+  declineCallApi,
+  hangupCallApi,
   pinPostApi,
   reactPostApi,
   recallMessageApi,
