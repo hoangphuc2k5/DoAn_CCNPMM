@@ -107,6 +107,44 @@ const createCall = async (conversationId, callerId, type = "audio") => {
       };
     }
 
+    const busyCall = await Call.findOne({
+      participants: { $in: [callerId, calleeId] },
+      status: { $in: ["ringing", "active"] },
+    });
+
+    if (busyCall) {
+      const isCallerBusy = busyCall.participants.some(p => p.toString() === callerId.toString());
+      if (isCallerBusy) {
+         return {
+           EC: 1,
+           EM: "Bạn đang trong một cuộc gọi khác",
+         };
+      } else {
+         const call = await Call.create({
+           conversation: conversationId,
+           caller: callerId,
+           callee: calleeId,
+           participants: [callerId, calleeId],
+           type: type === "video" ? "video" : "audio",
+           status: "ended",
+           endedReason: "busy",
+           roomId: null,
+           startedAt: null,
+           answeredAt: null,
+           endedAt: new Date(),
+           durationSeconds: 0
+         });
+         
+         const populatedCall = await populateCall(Call.findById(call._id));
+         socketService.emitCallMissed(populatedCall); // Emit missed call so it can update UI if needed
+         
+         return {
+           EC: 1,
+           EM: "Người dùng đang bận trong một cuộc gọi khác",
+         };
+      }
+    }
+
     const call = await Call.create({
       conversation: conversationId,
       caller: callerId,
