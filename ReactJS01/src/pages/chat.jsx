@@ -37,11 +37,14 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "dayjs/locale/vi";
 import { useSocket } from "../components/context/socket.context";
+import { useCall } from "../components/context/call.context";
 import { getMediaUrl } from "../util/media";
 import {
   getConversationsApi,
   createConversationApi,
   getMessagesApi,
+  getCallHistoryApi,
+  startCallApi,
   sendMessageApi,
   recallMessageApi,
   markSeenApi,
@@ -114,10 +117,53 @@ const applyUnreadSummary = (conversations, summary) => {
   }));
 };
 
+const getOtherParticipant = (conversation, currentUserId) => {
+  if (!conversation || conversation.isGroup) return null;
+  return conversation.participants?.find((participant) => participant._id !== currentUserId) || null;
+};
+
+const formatCallDuration = (seconds = 0) => {
+  const totalSeconds = Math.max(0, Math.floor(seconds || 0));
+  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+  const remainingSeconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${minutes}:${remainingSeconds}`;
+};
+
+const getCallStatusLabel = (status) => {
+  switch (status) {
+    case "active":
+      return "Đang gọi";
+    case "ringing":
+      return "Đang đổ chuông";
+    case "missed":
+      return "Cuộc gọi nhỡ";
+    case "declined":
+      return "Đã từ chối";
+    case "canceled":
+      return "Đã hủy";
+    case "ended":
+      return "Đã kết thúc";
+    default:
+      return "Cuộc gọi";
+  }
+};
+
+const CALL_WINDOW_WIDTHS = {
+  compact: 420,
+  medium: 720,
+  large: 980,
+};
+
+const CHAT_ATTACHMENT_SIZE_LIMIT_MB = 20;
+const CHAT_ATTACHMENT_SIZE_LIMIT_BYTES = CHAT_ATTACHMENT_SIZE_LIMIT_MB * 1024 * 1024;
+
+const isChatAttachmentTooLarge = (file) => Boolean(file && file.size > CHAT_ATTACHMENT_SIZE_LIMIT_BYTES);
+
 const ChatPage = () => {
   const currentUser = useSelector((state) => state.auth.user);
   const { socket, onlineUsers, chatUnread, refreshChatUnread, subscribeMessageRecalled, subscribeBlockStatusChanged, subscribeRestrictStatusChanged } =
     useSocket();
+  const { startOutgoingCall: startCallGlobal } = useCall();
   const navigate = useNavigate();
 
   const getConvDetails = (conv) => {
@@ -205,6 +251,7 @@ const ChatPage = () => {
 
   // Staged Files
   const [fileList, setFileList] = useState([]);
+  const [callHistory, setCallHistory] = useState([]);
 
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -283,17 +330,23 @@ const ChatPage = () => {
         setConversations(
           result.data.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
         );
-        // If current conversation is affected, update it too
-        if (selectedConv && (selectedConv._id === data.blockerId || selectedConv._id === data.targetId)) {
+        if (selectedConv) {
           const updatedConv = result.data.find((c) => c._id === selectedConv._id);
           if (updatedConv) {
             setSelectedConv(updatedConv);
           }
         }
+        if (data?.targetId === currentUser?._id?.toString()) {
+          antdMessage[data.isBlocked ? "warning" : "info"](
+            data.isBlocked
+              ? "Bạn đã bị chặn bởi người dùng này."
+              : "Bạn đã được bỏ chặn bởi người dùng này."
+          );
+        }
       }
     };
     return subscribeBlockStatusChanged(handleBlockStatusChanged);
-  }, [subscribeBlockStatusChanged, selectedConv]);
+  }, [subscribeBlockStatusChanged, selectedConv, currentUser?._id]);
 
   useEffect(() => {
     if (!subscribeRestrictStatusChanged) return undefined;
@@ -305,8 +358,7 @@ const ChatPage = () => {
         setConversations(
           result.data.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
         );
-        // If current conversation is affected, update it too
-        if (selectedConv && (selectedConv._id === data.restrictorId || selectedConv._id === data.targetId)) {
+        if (selectedConv) {
           const updatedConv = result.data.find((c) => c._id === selectedConv._id);
           if (updatedConv) {
             setSelectedConv(updatedConv);
@@ -466,7 +518,7 @@ const ChatPage = () => {
       socket.off("stop_typing", handleStopTyping);
       socket.off("conversation_updated", handleConversationUpdated);
     };
-  }, [socket, currentUser, refreshChatUnread]);
+  }, [currentUser, refreshChatUnread, socket]);
 
   // Join/leave rooms
   useEffect(() => {
@@ -519,6 +571,44 @@ const ChatPage = () => {
     setLoadingMsgs(false);
   };
 
+  const fetchCallHistory = async (conversationId) => {
+    const res = await getCallHistoryApi(conversationId);
+    if (res && res.EC === 0) {
+      setCallHistory(res.data || []);
+    } else {
+      setCallHistory([]);
+    }
+  };
+
+  const startOutgoingCall = useCallback(
+    async (mediaType) => {
+      if (!selectedConv || selectedConv.isGroup) {
+        antdMessage.info("Chỉ hỗ trợ gọi trong cuộc trò chuyện cá nhân");
+        return;
+      }
+
+      const details = getConvDetails(selectedConv);
+      if (details.isBlockedByMe || details.isBlockedMe) {
+        antdMessage.error("Bạn không thể gọi vì hai bên đang bị chặn");
+        return;
+      }
+
+      const peerUser = getOtherParticipant(selectedConv, currentUser?._id);
+      if (!peerUser?._id) {
+        antdMessage.error("Không tìm thấy người nhận cuộc gọi");
+        return;
+      }
+
+      try {
+        await startCallGlobal(selectedConv._id, mediaType);
+      } catch (error) {
+        console.error(error);
+        antdMessage.error(error?.message || "Không thể khởi tạo cuộc gọi");
+      }
+    },
+    [getConvDetails, selectedConv, currentUser?._id, startCallGlobal]
+  );
+
   const selectConversation = (conv) => {
     setSelectedConv(conv);
     setTypingUsers([]);
@@ -528,6 +618,7 @@ const ChatPage = () => {
       prev.map((c) => (getConvId(c) === getConvId(conv) ? { ...c, unreadCount: 0 } : c))
     );
     fetchMessages(conv._id);
+    fetchCallHistory(conv._id);
     markSeenApi(conv._id).then(() => refreshChatUnread());
   };
 
@@ -579,8 +670,53 @@ const ChatPage = () => {
     return files;
   };
 
+  const downloadAttachment = async (attachment) => {
+    if (!attachment?.url) return;
+
+    const downloadUrl = getMediaUrl(attachment.url);
+    const downloadName = attachment.filename || downloadUrl.split("/").pop() || "download";
+
+    try {
+      const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        throw new Error("Không thể tải tệp");
+      }
+
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = downloadName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error("Failed to download attachment:", error);
+      antdMessage.warning("Không thể giữ tên gốc khi tải, đang mở tệp để tải xuống.");
+      const fallbackLink = document.createElement("a");
+      fallbackLink.href = downloadUrl;
+      fallbackLink.download = downloadName;
+      fallbackLink.target = "_blank";
+      fallbackLink.rel = "noopener noreferrer";
+      document.body.appendChild(fallbackLink);
+      fallbackLink.click();
+      fallbackLink.remove();
+    }
+  };
+
+  const validateChatAttachments = (files) => {
+    const oversizedFile = files.find((file) => isChatAttachmentTooLarge(file));
+    if (oversizedFile) {
+      antdMessage.error(`Kích thước tệp vượt quá giới hạn ${CHAT_ATTACHMENT_SIZE_LIMIT_MB}MB.`);
+      return false;
+    }
+    return true;
+  };
+
   const sendFilesMessage = async (files, caption = "") => {
     if (!selectedConv || !files.length) return false;
+    if (!validateChatAttachments(files)) return false;
 
     const hideLoading = antdMessage.loading("Đang gửi tệp tin...", 0);
     try {
@@ -605,7 +741,7 @@ const ChatPage = () => {
     } catch (error) {
       hideLoading();
       console.error(error);
-      antdMessage.error("Đã xảy ra lỗi khi gửi tin nhắn");
+      antdMessage.error(error?.response?.data?.EM || "Đã xảy ra lỗi khi gửi tin nhắn");
       return false;
     }
   };
@@ -618,6 +754,8 @@ const ChatPage = () => {
 
     e.preventDefault();
     e.stopPropagation();
+
+    if (!validateChatAttachments(pastedFiles)) return;
 
     if (isTyping && socket) {
       setIsTyping(false);
@@ -700,13 +838,22 @@ const ChatPage = () => {
   };
 
   const handleRecallMessage = async (messageId) => {
-    const res = await recallMessageApi(messageId);
-    if (res && res.EC === 0) {
-      applyRecalledMessageUpdate(res.data);
-      antdMessage.success("Tin nhắn đã được thu hồi");
-    } else {
-      antdMessage.error(res?.EM || "Không thể thu hồi tin nhắn");
-    }
+    Modal.confirm({
+      title: "Thu hồi tin nhắn?",
+      content: "Tin nhắn sẽ bị thu hồi cho tất cả mọi người và không thể xem lại nội dung cũ.",
+      okText: "Thu hồi",
+      okButtonProps: { danger: true },
+      cancelText: "Hủy",
+      onOk: async () => {
+        const res = await recallMessageApi(messageId);
+        if (res && res.EC === 0) {
+          applyRecalledMessageUpdate(res.data);
+          antdMessage.success("Tin nhắn đã được thu hồi");
+        } else {
+          antdMessage.error(res?.EM || "Không thể thu hồi tin nhắn");
+        }
+      },
+    });
   };
 
   const handleStartNewChat = async (friendId) => {
@@ -967,10 +1114,12 @@ const ChatPage = () => {
                 <a
                   key={att._id}
                   href={getMediaUrl(att.url)}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="right-sidebar-file-item"
                   style={{ maxWidth: 280, display: "flex", margin: "4px 0" }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    downloadAttachment(att);
+                  }}
                 >
                   <FileOutlined className="text-xl text-blue-500" />
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -1226,10 +1375,10 @@ const ChatPage = () => {
               {/* Icon actions */}
               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 <Tooltip title="Gọi điện">
-                  <Button type="text" shape="circle" icon={<PhoneOutlined style={{ fontSize: 18, color: "#65676b" }} />} onClick={() => showNotSupportedMessage("Gọi điện")} />
+                  <Button type="text" shape="circle" icon={<PhoneOutlined style={{ fontSize: 18, color: "#65676b" }} />} onClick={() => startOutgoingCall("audio")} disabled={selectedConv.isGroup} />
                 </Tooltip>
                 <Tooltip title="Gọi Video">
-                  <Button type="text" shape="circle" icon={<VideoCameraOutlined style={{ fontSize: 18, color: "#65676b" }} />} onClick={() => showNotSupportedMessage("Gọi Video")} />
+                  <Button type="text" shape="circle" icon={<VideoCameraOutlined style={{ fontSize: 18, color: "#65676b" }} />} onClick={() => startOutgoingCall("video")} disabled={selectedConv.isGroup} />
                 </Tooltip>
                 <Tooltip title={showRightPanel ? "Ẩn thông tin" : "Hiện thông tin"}>
                   <Button
@@ -1402,6 +1551,10 @@ const ChatPage = () => {
                 <Upload
                   fileList={fileList}
                   beforeUpload={(file) => {
+                    if (isChatAttachmentTooLarge(file)) {
+                      antdMessage.error(`Kích thước tệp vượt quá giới hạn ${CHAT_ATTACHMENT_SIZE_LIMIT_MB}MB.`);
+                      return Upload.LIST_IGNORE;
+                    }
                     setFileList((prev) => [...prev, file]);
                     return false;
                   }}
@@ -1518,6 +1671,52 @@ const ChatPage = () => {
             </Tooltip>
           </div>
 
+          <div className="right-sidebar-section">
+            <div className="right-sidebar-section-title">Lịch sử cuộc gọi</div>
+            {callHistory.length > 0 ? (
+              <List
+                size="small"
+                dataSource={callHistory.slice(0, 6)}
+                renderItem={(item) => {
+                  const currentUserId = getConvId(currentUser);
+                  const isIncoming = getConvId(item.callee) === currentUserId;
+                  const otherPerson = isIncoming ? item.caller : item.callee;
+                  const isMissed = item.status === "missed";
+                  const isDeclined = item.status === "declined";
+                  const isEnded = item.status === "ended";
+
+                  return (
+                    <List.Item style={{ paddingInline: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%" }}>
+                        <Avatar
+                          size={34}
+                          src={getMediaUrl(otherPerson?.avatar)}
+                          style={{ backgroundColor: "#7F00FD", flexShrink: 0 }}
+                        >
+                          {getInitial(otherPerson?.name)}
+                        </Avatar>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#1c1e21" }} className="truncate">
+                            {otherPerson?.name || "Người dùng"}
+                          </div>
+                          <div style={{ fontSize: 11, color: isMissed ? "#d4380d" : isDeclined ? "#d46b08" : "#8c8c8c" }}>
+                            {getCallStatusLabel(item.status)} · {item.type === "video" ? "Video" : "Thoại"}
+                            {isEnded && item.durationSeconds > 0 ? ` · ${formatCallDuration(item.durationSeconds)}` : ""}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 10, color: "#8c8c8c", flexShrink: 0 }}>
+                          {dayjs(item.createdAt).format("DD/MM HH:mm")}
+                        </span>
+                      </div>
+                    </List.Item>
+                  );
+                }}
+              />
+            ) : (
+              <div style={{ fontSize: 12, color: "gray", padding: "4px 0" }}>Chưa có cuộc gọi nào</div>
+            )}
+          </div>
+
           {/* File phương tiện */}
           <div className="right-sidebar-section">
             <div className="right-sidebar-section-title">
@@ -1598,9 +1797,11 @@ const ChatPage = () => {
                     <a
                       key={idx}
                       href={getMediaUrl(att.url)}
-                      target="_blank"
-                      rel="noopener noreferrer"
                       className="right-sidebar-file-item"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        downloadAttachment(att);
+                      }}
                     >
                       <FileOutlined style={{ color: "#7F00FD", fontSize: 16 }} />
                       <span className="truncate" style={{ flex: 1 }}>{att.filename}</span>
@@ -1653,6 +1854,8 @@ const ChatPage = () => {
           )}
         </div>
       )}
+
+
 
       {/* Modal 1-1 Chat Selection */}
       <Modal

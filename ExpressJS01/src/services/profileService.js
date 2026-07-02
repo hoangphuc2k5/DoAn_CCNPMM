@@ -6,6 +6,23 @@ const Friendship = require("../models/friendship");
 const Post = require("../models/post");
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(id);
+const MAX_BIO_CHARS = 500;
+const PHONE_REGEX = /^(?:0\d{9,10}|\+84\d{9})$/;
+
+const normalizePhone = (value = "") => String(value).replace(/[\s-]/g, "").trim();
+
+const sanitizeText = (value = "") =>
+  String(value)
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/[<>]/g, "")
+    .trim();
+
+const getLocalDateString = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
 const normalizeMediaItem = (item, postId, createdAt) => {
   if (!item) return null;
@@ -136,6 +153,7 @@ const updateProfileService = async (userId, updateData) => {
       "phone",
       "address",
       "avatar",
+      "coverPhoto",
       "bio",
       "gender",
       "dateOfBirth",
@@ -147,6 +165,67 @@ const updateProfileService = async (userId, updateData) => {
         filteredData[field] = updateData[field];
       }
     });
+
+    if (filteredData.phone !== undefined) {
+      const normalizedPhone = normalizePhone(filteredData.phone);
+      if (normalizedPhone && !PHONE_REGEX.test(normalizedPhone)) {
+        return { EC: 1, EM: "Số điện thoại không đúng định dạng." };
+      }
+      filteredData.phone = normalizedPhone;
+    }
+
+    if (filteredData.bio !== undefined) {
+      const safeBio = sanitizeText(filteredData.bio);
+      if (safeBio.length > MAX_BIO_CHARS) {
+        return { EC: 1, EM: `Tiểu sử chỉ được tối đa ${MAX_BIO_CHARS} ký tự.` };
+      }
+      filteredData.bio = safeBio;
+    }
+
+    if (filteredData.name !== undefined) {
+      filteredData.name = sanitizeText(filteredData.name);
+    }
+
+    if (filteredData.address !== undefined) {
+      filteredData.address = sanitizeText(filteredData.address);
+    }
+
+    if (filteredData.avatar !== undefined) {
+      filteredData.avatar = sanitizeText(filteredData.avatar);
+    }
+
+    if (filteredData.coverPhoto !== undefined) {
+      filteredData.coverPhoto = sanitizeText(filteredData.coverPhoto);
+    }
+
+    if (filteredData.dateOfBirth !== undefined) {
+      const rawDate = String(filteredData.dateOfBirth || "").trim();
+
+      if (!rawDate) {
+        filteredData.dateOfBirth = null;
+      } else {
+        const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+        if (!datePattern.test(rawDate)) {
+          return { EC: 1, EM: "Ngày sinh không hợp lệ." };
+        }
+
+        const [year, month, day] = rawDate.split("-").map(Number);
+        const parsedDate = new Date(year, month - 1, day);
+        if (
+          parsedDate.getFullYear() !== year ||
+          parsedDate.getMonth() + 1 !== month ||
+          parsedDate.getDate() !== day
+        ) {
+          return { EC: 1, EM: "Ngày sinh không hợp lệ." };
+        }
+
+        if (rawDate > getLocalDateString()) {
+          return { EC: 1, EM: "Ngày sinh không được ở trong tương lai." };
+        }
+
+        filteredData.dateOfBirth = parsedDate;
+      }
+    }
 
     const user = await User.findByIdAndUpdate(userId, filteredData, {
       new: true,

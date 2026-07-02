@@ -1771,10 +1771,13 @@ select,
 .post-dialog-reply-input {
   width: min(520px, 100%);
   margin-top: 4px;
+  overflow: visible;
 }
 
 .post-dialog-reply-input .ant-input,
-.post-dialog-comment-input .ant-input {
+.post-dialog-comment-input .ant-input,
+.post-dialog-reply-input .mi-edit,
+.post-dialog-comment-input .mi-edit {
   border-color: transparent;
   border-radius: 20px 0 0 20px !important;
   background: #f0f2f5;
@@ -1794,10 +1797,12 @@ select,
   border-top: 1px solid var(--line);
   background: #fff;
   box-shadow: 0 -8px 20px rgba(15, 23, 42, 0.08);
+  overflow: visible;
 }
 
 .post-dialog-comment-input {
   flex: 1;
+  overflow: visible;
 }
 
 .comment-item {

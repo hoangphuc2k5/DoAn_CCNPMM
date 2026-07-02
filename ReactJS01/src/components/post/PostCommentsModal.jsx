@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import MentionInput from "../ui/MentionInput";
 import {
   Avatar,
@@ -6,7 +6,6 @@ import {
   Dropdown,
   Empty,
   Image,
-  Input,
   message,
   Modal,
   Space,
@@ -25,6 +24,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { getMediaUrl } from "../../util/media";
+import ReactionSummary from "./ReactionSummary";
 
 const normalizeMedia = (media = []) =>
   media
@@ -49,6 +49,26 @@ const getInitials = (name = "") =>
     .join("")
     .toUpperCase() || "U";
 
+const renderMentionContent = (text = "") => {
+  if (!text) return "";
+  const regex = /@\[([^\]]+)\]\(([^)]+)\)/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    parts.push(
+      <span key={`${match.index}-${match[2]}`} style={{ color: "#1677ff", fontWeight: 700 }}>
+        {match[1]}
+      </span>,
+    );
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts.length ? parts : text;
+};
 const PostCommentsModal = ({
   post,
   open,
@@ -154,11 +174,11 @@ const PostCommentsModal = ({
   const renderReplyInput = (commentId) =>
     canComment && activeReplyId === commentId ? (
       <Space.Compact className="post-dialog-reply-input">
-        <Input
-          autoFocus
+        <MentionInput
+          type="input"
           value={replyDrafts[commentId] || ""}
           onChange={(event) => onReplyChange?.(commentId, event.target.value)}
-          onPressEnter={() => onSubmitReply?.(post._id, commentId)}
+          onPressEnter={(raw) => onSubmitReply?.(post._id, commentId, raw)}
           placeholder="Trả lời..."
         />
         <Button
@@ -193,7 +213,7 @@ const PostCommentsModal = ({
               <div className="post-dialog-bubble">
                 <strong>{comment.author?.name || comment.author?.email}</strong>
                 <Typography.Paragraph className="mb-0">
-                  {comment.content}
+                  {renderMentionContent(comment.content)}
                 </Typography.Paragraph>
               </div>
               {renderCommentMenu(comment, canDelete)}
@@ -232,7 +252,7 @@ const PostCommentsModal = ({
                 <div className="post-dialog-bubble">
                   <strong>{reply.author?.name || reply.author?.email}</strong>
                   <Typography.Paragraph className="mb-0">
-                    {reply.content}
+                    {renderMentionContent(reply.content)}
                   </Typography.Paragraph>
                 </div>
                 {renderCommentMenu(reply, canDeleteReply)}
@@ -273,7 +293,7 @@ const PostCommentsModal = ({
 
             {post.content ? (
               <Typography.Paragraph className="post-dialog-content">
-                {post.content}
+                {renderMentionContent(post.content)}
               </Typography.Paragraph>
             ) : null}
 
@@ -293,7 +313,7 @@ const PostCommentsModal = ({
                   </span>
                 </div>
                 <Typography.Paragraph className="mb-2">
-                  {post.sharedPost.content}
+                  {renderMentionContent(post.sharedPost.content)}
                 </Typography.Paragraph>
               </div>
             ) : null}
@@ -324,10 +344,7 @@ const PostCommentsModal = ({
             ) : null}
 
             <div className="post-dialog-stats">
-              <span>
-                <LikeFilled className={post.myReaction ? "active-like" : ""} />{" "}
-                {post.stats?.reactions || 0}
-              </span>
+              <ReactionSummary post={post} />
               <span>
                 {post.stats?.comments || 0} bình luận · {post.stats?.shares || 0} lượt chia sẻ
               </span>
@@ -394,3 +411,6 @@ const PostCommentsModal = ({
 };
 
 export default PostCommentsModal;
+
+
+

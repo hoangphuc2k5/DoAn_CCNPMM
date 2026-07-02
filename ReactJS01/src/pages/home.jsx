@@ -77,17 +77,9 @@ import MentionInput from "../components/ui/MentionInput";
 import { getNotificationTargetUrl } from "../util/notification";
 import CreatePostComposer from "../components/post/CreatePostComposer";
 import PostCommentsModal from "../components/post/PostCommentsModal";
+import ReactionSummary from "../components/post/ReactionSummary";
+import { REACTIONS, REACTION_MAP, applyPostReaction } from "../util/reactions";
 
-const REACTIONS = [
-  { type: "like",  emoji: "👍", label: "Thích",    color: "#1877f2" },
-  { type: "love",  emoji: "❤️", label: "Yêu thích", color: "#f33e58" },
-  { type: "haha",  emoji: "😆", label: "Haha",     color: "#f7b125" },
-  { type: "wow",   emoji: "😮", label: "Wow",      color: "#f7b125" },
-  { type: "sad",   emoji: "😢", label: "Buồn",     color: "#f7b125" },
-  { type: "angry", emoji: "😡", label: "Phẫn nộ",  color: "#e9710f" },
-];
-
-const REACTION_MAP = REACTIONS.reduce((acc, r) => { acc[r.type] = r; return acc; }, {});
 
 // Floating reaction picker (Facebook style)
 const ReactionPicker = ({ myReaction, onReact }) => {
@@ -366,14 +358,6 @@ const HomePage = () => {
     return () => window.clearInterval(timer);
   }, [isLoggedIn]);
 
-  const postById = useMemo(
-    () =>
-      posts.reduce((acc, post) => {
-        acc[post._id] = post;
-        return acc;
-      }, {}),
-    [posts],
-  );
 
   const activeCommentPost = useMemo(
     () => posts.find((post) => post._id === commentModalPostId) || null,
@@ -490,22 +474,15 @@ const HomePage = () => {
 
   const handleReact = async (postId, type) => {
     if (!requireAuthentication("thích bài viết")) return;
-    const before = postById[postId];
     const res = await reactPostApi(postId, type);
     if (res?.EC === 0) {
-      updatePost(postId, (post) => ({
-        ...post,
-        myReaction: res.data?.type || null,
-        stats: {
-          ...post.stats,
-          reactions:
-            res.data?.type && !before.myReaction
-              ? post.stats.reactions + 1
-              : !res.data && before.myReaction
-                ? Math.max(post.stats.reactions - 1, 0)
-                : post.stats.reactions,
-        },
-      }));
+      updatePost(postId, (post) =>
+        applyPostReaction(post, res.data?.type || null, {
+          ...user,
+          name: displayName,
+          avatar: userProfile?.avatar || user?.avatar,
+        }),
+      );
     } else {
       message.error(res?.EM || "Không thể react");
     }
@@ -858,7 +835,7 @@ const HomePage = () => {
                   <div className="comment-bubble">
                     <Typography.Text strong>{comment.author?.name}</Typography.Text>
                     <Typography.Paragraph className="mb-0">
-                      {comment.content}
+                      {renderPostContent(comment.content)}
                     </Typography.Paragraph>
                   </div>
                 </Space>
@@ -888,13 +865,14 @@ const HomePage = () => {
                         <div className="reply-bubble">
                           <Typography.Text strong>{reply.author?.name}</Typography.Text>
                           <Typography.Paragraph className="mb-0">
-                            {reply.content}
+                            {renderPostContent(reply.content)}
                           </Typography.Paragraph>
                         </div>
                       </Space>
                     ))}
                     <Space.Compact className="reply-input">
-                      <Input
+                      <MentionInput
+                        type="input"
                         value={replyDrafts[comment._id] || ""}
                         onChange={(event) =>
                           setReplyDrafts((prev) => ({
@@ -902,7 +880,7 @@ const HomePage = () => {
                             [comment._id]: event.target.value,
                           }))
                         }
-                        onPressEnter={() => handleReply(post._id, comment._id)}
+                        onPressEnter={(raw) => handleReply(post._id, comment._id, raw)}
                         placeholder="Trả lời bình luận..."
                       />
                       <Button onClick={() => handleReply(post._id, comment._id)}>
@@ -1120,9 +1098,7 @@ const HomePage = () => {
                 {/* Post Stats */}
                 <div className="flex items-center justify-between text-gray-500 text-sm mb-3 pb-3 border-b border-gray-200">
                   <div className="flex items-center gap-2">
-                    <span className="flex items-center gap-1">
-                      👍 {post.stats?.reactions || 0}
-                    </span>
+                    <ReactionSummary post={post} className="flex items-center gap-1" />
                   </div>
                   <div>
                     {post.stats?.comments || 0} bình luận · {post.stats?.shares || 0} chia sẻ
@@ -1299,3 +1275,6 @@ const HomePage = () => {
 };
 
 export default HomePage;
+
+
+

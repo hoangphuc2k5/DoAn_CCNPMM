@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useId, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Avatar, Spin } from "antd";
 import { searchApi } from "../../util/api";
 import { getMediaUrl } from "../../util/media";
@@ -144,8 +145,10 @@ const MentionInput = ({
   rows = 4,
 }) => {
   const elRef = useRef(null);
+  const dropdownRef = useRef(null);
   const isProg = useRef(false);      // true while we are setting innerHTML programmatically
   const lastRaw = useRef(value);     // track last raw value to avoid unnecessary DOM updates
+  const dropdownId = useId().replace(/:/g, "");
 
   const [dropOpen, setDropOpen] = useState(false);
   const [queryText, setQueryText] = useState("");
@@ -153,20 +156,40 @@ const MentionInput = ({
   const [users, setUsers] = useState([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [dropdownPlacement, setDropdownPlacement] = useState("bottom"); // "top" | "bottom"
+  const [dropdownStyle, setDropdownStyle] = useState(null);
 
-  /* ── detect dropdown placement based on viewport space ── */
+  const updateDropdownPosition = useCallback(() => {
+    if (!elRef.current) return;
+    const rect = elRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const showAbove = spaceBelow < 210;
+
+    setDropdownStyle({
+      position: "fixed",
+      left: rect.left,
+      width: Math.max(rect.width, 280),
+      zIndex: 10050,
+      ...(showAbove
+        ? { bottom: window.innerHeight - rect.top + 4 }
+        : { top: rect.bottom + 4 }),
+    });
+  }, []);
+
+  /* ── keep portal dropdown aligned while open ── */
   useEffect(() => {
-    if (dropOpen && elRef.current) {
-      const rect = elRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      if (spaceBelow < 210) {
-        setDropdownPlacement("top");
-      } else {
-        setDropdownPlacement("bottom");
-      }
+    if (!dropOpen) {
+      setDropdownStyle(null);
+      return;
     }
-  }, [dropOpen]);
+    updateDropdownPosition();
+    const onReposition = () => updateDropdownPosition();
+    window.addEventListener("scroll", onReposition, true);
+    window.addEventListener("resize", onReposition);
+    return () => {
+      window.removeEventListener("scroll", onReposition, true);
+      window.removeEventListener("resize", onReposition);
+    };
+  }, [dropOpen, updateDropdownPosition]);
 
   /* ── fetch suggestions ── */
   useEffect(() => {
@@ -275,10 +298,13 @@ const MentionInput = ({
   /* ── close dropdown on outside click ── */
   useEffect(() => {
     const h = (e) => {
-      const dd = document.getElementById("mi-dropdown");
-      if (dd && !dd.contains(e.target) && !elRef.current?.contains(e.target)) {
-        setDropOpen(false);
+      if (
+        dropdownRef.current?.contains(e.target) ||
+        elRef.current?.contains(e.target)
+      ) {
+        return;
       }
+      setDropOpen(false);
     };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
@@ -347,60 +373,65 @@ const MentionInput = ({
         }}
       />
 
-      {/* ── mention dropdown ── */}
-      {dropOpen && (
-        <div
-          id="mi-dropdown"
-          className="absolute left-0 w-full max-h-[200px] overflow-y-auto bg-white border border-gray-100 rounded-xl py-1.5 z-[9999]"
-          style={{
-            boxShadow: "0 10px 25px -5px rgba(0,0,0,.12), 0 8px 10px -6px rgba(0,0,0,.1)",
-            minWidth: "280px",
-            ...(dropdownPlacement === "top"
-              ? { bottom: "100%", marginBottom: "4px" }
-              : { top: "100%", marginTop: "4px" }),
-          }}
-        >
-          {loading && (
-            <div className="px-4 py-2 text-xs text-gray-400 flex items-center gap-2">
-              <Spin size="small" /> Đang tìm kiếm...
-            </div>
-          )}
-          {!loading && users.length === 0 && (
-            <div className="px-4 py-2 text-xs text-gray-400 italic">
-              Không tìm thấy người dùng phù hợp
-            </div>
-          )}
-          {!loading && users.map((item, idx) => {
-            const ep = item.email ? item.email.split("@")[0] : "user";
-            const active = idx === activeIdx;
-            return (
-              <div
-                key={item._id || idx}
-                className={`px-4 py-2 flex items-center gap-3 cursor-pointer transition-colors duration-100 ${
-                  active ? "bg-blue-50 text-blue-900 font-medium" : "hover:bg-gray-50 text-gray-700"
-                }`}
-                onMouseDown={(e) => e.preventDefault()} // prevent blur before click
-                onClick={() => selectUser(item)}
-                onMouseEnter={() => setActiveIdx(idx)}
-              >
-                <Avatar
-                  size={30}
-                  src={getMediaUrl(item.avatar)}
-                  style={{ backgroundColor: "#7F00FD", fontWeight: "bold", fontSize: "12px", flexShrink: 0 }}
-                >
-                  {item.name?.[0]?.toUpperCase() || "U"}
-                </Avatar>
-                <div className="flex flex-col items-start overflow-hidden">
-                  <span className="text-sm truncate font-semibold leading-tight">{item.name}</span>
-                  <span className={`text-xs truncate leading-tight ${active ? "text-blue-500" : "text-gray-400"}`}>
-                    @{ep}
-                  </span>
-                </div>
+      {/* ── mention dropdown (portal avoids modal/scroll clipping) ── */}
+      {dropOpen && dropdownStyle &&
+        createPortal(
+          <div
+            ref={dropdownRef}
+            id={`mi-dropdown-${dropdownId}`}
+            className="max-h-[200px] overflow-y-auto bg-white border border-gray-100 rounded-xl py-1.5"
+            style={{
+              ...dropdownStyle,
+              boxShadow: "0 10px 25px -5px rgba(0,0,0,.12), 0 8px 10px -6px rgba(0,0,0,.1)",
+            }}
+          >
+            {loading && (
+              <div className="px-4 py-2 text-xs text-gray-400 flex items-center gap-2">
+                <Spin size="small" /> Đang tìm kiếm...
               </div>
-            );
-          })}
-        </div>
-      )}
+            )}
+            {!loading && !queryText && (
+              <div className="px-4 py-2 text-xs text-gray-400 italic">
+                Nhập tên hoặc email để tìm người dùng
+              </div>
+            )}
+            {!loading && queryText && users.length === 0 && (
+              <div className="px-4 py-2 text-xs text-gray-400 italic">
+                Không tìm thấy người dùng phù hợp
+              </div>
+            )}
+            {!loading && users.map((item, idx) => {
+              const ep = item.email ? item.email.split("@")[0] : "user";
+              const active = idx === activeIdx;
+              return (
+                <div
+                  key={item._id || idx}
+                  className={`px-4 py-2 flex items-center gap-3 cursor-pointer transition-colors duration-100 ${
+                    active ? "bg-blue-50 text-blue-900 font-medium" : "hover:bg-gray-50 text-gray-700"
+                  }`}
+                  onMouseDown={(e) => e.preventDefault()} // prevent blur before click
+                  onClick={() => selectUser(item)}
+                  onMouseEnter={() => setActiveIdx(idx)}
+                >
+                  <Avatar
+                    size={30}
+                    src={getMediaUrl(item.avatar)}
+                    style={{ backgroundColor: "#7F00FD", fontWeight: "bold", fontSize: "12px", flexShrink: 0 }}
+                  >
+                    {item.name?.[0]?.toUpperCase() || "U"}
+                  </Avatar>
+                  <div className="flex flex-col items-start overflow-hidden">
+                    <span className="text-sm truncate font-semibold leading-tight">{item.name}</span>
+                    <span className={`text-xs truncate leading-tight ${active ? "text-blue-500" : "text-gray-400"}`}>
+                      @{ep}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };

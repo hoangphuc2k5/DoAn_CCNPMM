@@ -147,16 +147,23 @@ const createConversation = async (userId, payload) => {
         };
       }
 
-      // Kiểm tra xem người dùng hiện tại có bị chặn bởi người nhận không
+      // Kiểm tra chặn hai chiều trước khi mở cuộc trò chuyện
       const blockCheck = await Block.findOne({
-        blocker: targetUserId,
-        blocked: userId,
+        $or: [
+          { blocker: targetUserId, blocked: userId },
+          { blocker: userId, blocked: targetUserId },
+        ],
       });
 
       if (blockCheck) {
+        const blockerId = blockCheck.blocker.toString();
+        const blockedId = blockCheck.blocked.toString();
+        const isBlockedByTarget = blockerId === String(targetUserId) && blockedId === String(userId);
         return {
           EC: 1,
-          EM: "Bạn không thể tạo cuộc trò chuyện với người dùng này vì bạn đã bị chặn",
+          EM: isBlockedByTarget
+            ? "Bạn không thể tạo cuộc trò chuyện với người dùng này vì bạn đã bị chặn"
+            : "Bạn không thể tạo cuộc trò chuyện với người dùng này vì bạn đã chặn họ",
         };
       }
 
@@ -287,8 +294,7 @@ const sendMessage = async (conversationId, senderId, payload, files = []) => {
       };
     }
 
-    // Kiểm tra xem người gửi có bị chặn bởi bất kỳ người tham gia nào không
-    // Nếu có, không cho phép gửi tin nhắn
+    // Kiểm tra chặn hai chiều với bất kỳ người tham gia nào
     const senderIdStr = senderId.toString();
     const otherParticipants = conversation.participants
       .map(p => (p._id || p).toString())
@@ -296,14 +302,20 @@ const sendMessage = async (conversationId, senderId, payload, files = []) => {
 
     if (otherParticipants.length > 0) {
       const blockCheck = await Block.findOne({
-        blocker: { $in: otherParticipants },
-        blocked: senderId,
+        $or: [
+          { blocker: { $in: otherParticipants }, blocked: senderId },
+          { blocker: senderId, blocked: { $in: otherParticipants } },
+        ],
       });
 
       if (blockCheck) {
+        const blockedId = blockCheck.blocked.toString();
+        const isBlockedByOther = blockedId === senderId.toString();
         return {
           EC: 1,
-          EM: "Bạn không thể gửi tin nhắn vì đã bị chặn",
+          EM: isBlockedByOther
+            ? "Bạn không thể gửi tin nhắn vì đã bị chặn"
+            : "Bạn không thể gửi tin nhắn vì bạn đã chặn người dùng này",
         };
       }
     }
