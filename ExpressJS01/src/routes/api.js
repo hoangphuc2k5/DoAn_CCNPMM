@@ -34,6 +34,19 @@ const rateLimit = require("../middleware/rateLimit");
 
 const routerAPI = express.Router();
 
+const uploadSingleWithErrorResponse = (fieldName) => (req, res, next) => {
+  upload.single(fieldName)(req, res, (error) => {
+    if (error) {
+      const message =
+        error?.code === "LIMIT_FILE_SIZE"
+          ? "Ảnh tải lên không được vượt quá 5MB."
+          : error.message || "Chỉ chấp nhận file ảnh.";
+      return res.status(400).json({ EC: 1, EM: message });
+    }
+    return next();
+  });
+};
+
 const uploadPostMediaFiles = (req, res, next) => {
   postMediaUpload.array("media", 10)(req, res, (error) => {
     if (!error) return next();
@@ -41,6 +54,22 @@ const uploadPostMediaFiles = (req, res, next) => {
     return res.status(200).json({
       EC: 1,
       EM: error.message || "Không thể tải media lên.",
+    });
+  });
+};
+
+const uploadChatAttachments = (req, res, next) => {
+  chatUpload.array("attachments", 10)(req, res, (error) => {
+    if (!error) return next();
+
+    const message =
+      error?.code === "LIMIT_FILE_SIZE"
+        ? "Kích thước tệp vượt quá giới hạn 20MB."
+        : error.message || "Không thể tải tệp tin lên.";
+
+    return res.status(400).json({
+      EC: 1,
+      EM: message,
     });
   });
 };
@@ -70,12 +99,12 @@ routerAPI.get("/account/device-history", getDeviceHistory);
 routerAPI.put("/profile/me", profileController.updateProfile);
 routerAPI.put(
   "/profile/me/avatar",
-  upload.single("avatar"),
+  uploadSingleWithErrorResponse("avatar"),
   profileController.uploadAvatar,
 );
 routerAPI.put(
   "/profile/me/cover",
-  upload.single("cover"),
+  uploadSingleWithErrorResponse("cover"),
   profileController.uploadCover,
 );
 routerAPI.get("/profile/:userId", profileController.getProfile);
@@ -203,7 +232,7 @@ routerAPI.get("/conversations/:conversationId/calls", callController.getCallHist
 routerAPI.post("/conversations/:conversationId/calls", callController.startCall);
 routerAPI.post(
   "/conversations/:conversationId/messages",
-  chatUpload.array("attachments", 10),
+  uploadChatAttachments,
   chatController.sendMessage
 );
 routerAPI.post("/calls/:callId/accept", callController.acceptCall);

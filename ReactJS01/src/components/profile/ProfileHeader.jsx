@@ -1,4 +1,5 @@
-import { Avatar, Button, Space, message, Badge, Dropdown } from "antd";
+import { useState } from "react";
+import { Avatar, Button, Space, message, Badge, Dropdown, Modal, Descriptions } from "antd";
 import {
   CheckCircleFilled,
   EditOutlined,
@@ -11,6 +12,7 @@ import {
   CameraOutlined,
   ClockCircleOutlined,
   CaretDownOutlined,
+  MoreOutlined,
 } from "@ant-design/icons";
 import { getMediaUrl } from "../../util/media";
 import "../../styles/user-profile.css";
@@ -30,6 +32,8 @@ const ProfileHeader = ({
   onRejectFriendClick,
   isBlocked = false,
 }) => {
+  const [detailsVisible, setDetailsVisible] = useState(false);
+
   if (!profile) return null;
 
   const handleShare = () => {
@@ -57,6 +61,20 @@ const ProfileHeader = ({
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
     return name.slice(0, 2).toUpperCase();
+  };
+
+  const formatDate = (value) => {
+    if (!value) return "Chưa cập nhật";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Chưa cập nhật";
+    return date.toLocaleDateString("vi-VN");
+  };
+
+  const formatGender = (value) => {
+    if (value === "male") return "Nam";
+    if (value === "female") return "Nữ";
+    if (value === "other") return "Khác";
+    return "Chưa cập nhật";
   };
 
   return (
@@ -277,6 +295,22 @@ const ProfileHeader = ({
           <div className="profile-bio-text">
             {profile.bio || "UI/UX Designer · Yêu thích thiết kế và công nghệ 💜"}
           </div>
+
+          <Button
+            type="text"
+            icon={<MoreOutlined />}
+            onClick={() => setDetailsVisible(true)}
+            style={{
+              paddingLeft: 0,
+              color: "#7F00FD",
+              fontWeight: 600,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            Xem thêm
+          </Button>
         </div>
 
         {/* Stats row */}
@@ -299,6 +333,23 @@ const ProfileHeader = ({
           </div>
         </div>
       </div>
+
+      <Modal
+        title="Thông tin chi tiết"
+        open={detailsVisible}
+        onCancel={() => setDetailsVisible(false)}
+        footer={null}
+        centered
+      >
+        <Descriptions column={1} size="small" bordered>
+          <Descriptions.Item label="Email">{profile.email || "Chưa cập nhật"}</Descriptions.Item>
+          <Descriptions.Item label="Số điện thoại">{profile.phone || "Chưa cập nhật"}</Descriptions.Item>
+          <Descriptions.Item label="Ngày sinh">{formatDate(profile.dateOfBirth)}</Descriptions.Item>
+          <Descriptions.Item label="Giới tính">{formatGender(profile.gender)}</Descriptions.Item>
+          <Descriptions.Item label="Địa chỉ">{profile.address || "Chưa cập nhật"}</Descriptions.Item>
+          <Descriptions.Item label="Tiểu sử">{profile.bio || "Chưa cập nhật"}</Descriptions.Item>
+        </Descriptions>
+      </Modal>
     </div>
   );
 };
