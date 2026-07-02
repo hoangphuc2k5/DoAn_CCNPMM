@@ -235,7 +235,6 @@ routerAPI.post(
   uploadChatAttachments,
   chatController.sendMessage
 );
-routerAPI.get("/calls/:callId", callController.getCallById);
 routerAPI.post("/calls/:callId/accept", callController.acceptCall);
 routerAPI.post("/calls/:callId/decline", callController.declineCall);
 routerAPI.post("/calls/:callId/hangup", callController.endCall);

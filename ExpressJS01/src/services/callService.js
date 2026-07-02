@@ -165,30 +165,6 @@ const getCallHistory = async (conversationId, userId, limit = 50, skip = 0) => {
   }
 };
 
-const getCallById = async (callId, userId) => {
-  try {
-    const call = await Call.findById(callId);
-    if (!call) {
-      return { EC: 1, EM: "Không tìm thấy cuộc gọi" };
-    }
-
-    if (!call.participants.some((participantId) => participantId.toString() === userId.toString())) {
-      return { EC: 1, EM: "Bạn không có quyền truy cập cuộc gọi này" };
-    }
-
-    const populatedCall = await populateCall(Call.findById(callId));
-
-    return {
-      EC: 0,
-      EM: "Lấy thông tin cuộc gọi thành công",
-      data: formatCall(populatedCall),
-    };
-  } catch (error) {
-    console.error("Error in getCallById:", error);
-    return { EC: 1, EM: "Lỗi khi lấy thông tin cuộc gọi", error: error.message };
-  }
-};
-
 const acceptCall = async (callId, userId) => {
   try {
     const call = await Call.findById(callId);
@@ -314,7 +290,6 @@ const endCall = async (callId, userId) => {
 module.exports = {
   createCall,
   getCallHistory,
-  getCallById,
   acceptCall,
   declineCall,
   endCall,

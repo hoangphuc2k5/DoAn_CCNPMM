@@ -14,6 +14,7 @@ import {
 } from "react-router-dom";
 import App from "./App.jsx";
 import store from "./Redux/store.js";
+import { CallProvider } from "./components/context/call.context.jsx";
 import { SocketProvider } from "./components/context/socket.context.jsx";
 import ForgotPasswordPage from "./pages/forgot-password.jsx";
 import HomePage from "./pages/home.jsx";
@@ -128,9 +129,11 @@ const router = createBrowserRouter([
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <Provider store={store}>
-      <SocketProvider>
-        <RouterProvider router={router} />
-      </SocketProvider>
+      <CallProvider>
+        <SocketProvider>
+          <RouterProvider router={router} />
+        </SocketProvider>
+      </CallProvider>
     </Provider>
   </React.StrictMode>,
 );

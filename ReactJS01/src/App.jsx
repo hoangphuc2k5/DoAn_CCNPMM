@@ -3,6 +3,7 @@ import { Spin } from "antd";
 import { Outlet } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import Sidebar from "./components/layout/sidebar";
+import CallNotification from "./components/CallNotification";
 import { fetchAccountThunk } from "./Redux/authSlice";
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
       <main className="app-main-content">
         <Outlet />
       </main>
+      <CallNotification />
     </div>
   );
 }
