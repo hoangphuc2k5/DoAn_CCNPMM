@@ -21,12 +21,6 @@ const startCall = async (req, res) => {
   return res.status(200).json(data);
 };
 
-const getCallById = async (req, res) => {
-  const { callId } = req.params;
-  const data = await callService.getCallById(callId, currentUserId(req));
-  return res.status(data.EC === 0 ? 200 : 400).json(data);
-};
-
 const acceptCall = async (req, res) => {
   const { callId } = req.params;
   const data = await callService.acceptCall(callId, currentUserId(req));
@@ -47,7 +41,6 @@ const endCall = async (req, res) => {
 
 module.exports = {
   getCallHistory,
-  getCallById,
   startCall,
   acceptCall,
   declineCall,

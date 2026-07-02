@@ -78,7 +78,6 @@ const startCallApi = (conversationId, payload) =>
   axios.post(`/v1/api/conversations/${conversationId}/calls`, payload);
 const sendMessageApi = (conversationId, payload) =>
   axios.post(`/v1/api/conversations/${conversationId}/messages`, payload);
-const getCallApi = (callId) => axios.get(`/v1/api/calls/${callId}`);
 const acceptCallApi = (callId) => axios.post(`/v1/api/calls/${callId}/accept`);
 const declineCallApi = (callId) => axios.post(`/v1/api/calls/${callId}/decline`);
 const hangupCallApi = (callId) => axios.post(`/v1/api/calls/${callId}/hangup`);
@@ -157,7 +156,6 @@ export {
   getCaptchaApi,
   getChatUnreadSummaryApi,
   getCallHistoryApi,
-  getCallApi,
   getConversationsApi,
   getDeviceHistoryApi,
   getFeedApi,
