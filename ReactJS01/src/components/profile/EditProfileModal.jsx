@@ -12,10 +12,28 @@ import { UploadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 import axiosInstance from "../../util/axios.customize";
+import { getMediaUrl } from "../../util/media";
+
+const MAX_BIO_CHARS = 500;
+const PHONE_REGEX = /^(?:0\d{9,10}|\+84\d{9})$/;
+
+const buildExistingFileList = (src, name) =>
+  src
+    ? [
+        {
+          uid: `current-${name}`,
+          name: `current-${name}`,
+          status: "done",
+          url: getMediaUrl(src),
+        },
+      ]
+    : [];
 
 const EditProfileModal = ({ visible, onCancel, profile, onSave }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [avatarFileList, setAvatarFileList] = useState([]);
+  const [coverFileList, setCoverFileList] = useState([]);
 
   useEffect(() => {
     if (!visible) return;
@@ -28,14 +46,18 @@ const EditProfileModal = ({ visible, onCancel, profile, onSave }) => {
       gender: profile?.gender || "",
       dateOfBirth: profile?.dateOfBirth ? dayjs(profile.dateOfBirth) : null,
     });
+    setAvatarFileList(buildExistingFileList(profile?.avatar, "avatar"));
+    setCoverFileList(buildExistingFileList(profile?.coverPhoto, "cover"));
   }, [form, profile, visible]);
 
   const handleSubmit = async (values) => {
     try {
       setLoading(true);
 
-      // Update profile info
-      await axiosInstance.put("/v1/api/profile/me", {
+      const shouldClearAvatar = Boolean(profile?.avatar) && avatarFileList.length === 0;
+      const shouldClearCover = Boolean(profile?.coverPhoto) && coverFileList.length === 0;
+
+      const payload = {
         name: values.name,
         bio: values.bio,
         phone: values.phone,
@@ -44,19 +66,30 @@ const EditProfileModal = ({ visible, onCancel, profile, onSave }) => {
         dateOfBirth: values.dateOfBirth
           ? values.dateOfBirth.format("YYYY-MM-DD")
           : "",
-      });
+      };
+
+      if (shouldClearAvatar) {
+        payload.avatar = "";
+      }
+
+      if (shouldClearCover) {
+        payload.coverPhoto = "";
+      }
+
+      // Update profile info
+      await axiosInstance.put("/v1/api/profile/me", payload);
 
       // Upload avatar if changed
-      if (values.avatar?.[0]?.originFileObj) {
+      if (avatarFileList[0]?.originFileObj) {
         const avatarForm = new FormData();
-        avatarForm.append("avatar", values.avatar[0].originFileObj);
+        avatarForm.append("avatar", avatarFileList[0].originFileObj);
         await axiosInstance.put("/v1/api/profile/me/avatar", avatarForm);
       }
 
       // Upload cover if changed
-      if (values.cover?.[0]?.originFileObj) {
+      if (coverFileList[0]?.originFileObj) {
         const coverForm = new FormData();
-        coverForm.append("cover", values.cover[0].originFileObj);
+        coverForm.append("cover", coverFileList[0].originFileObj);
         await axiosInstance.put("/v1/api/profile/me/cover", coverForm);
       }
 
@@ -99,11 +132,22 @@ const EditProfileModal = ({ visible, onCancel, profile, onSave }) => {
           <Input placeholder="Nhập tên" />
         </Form.Item>
 
-        <Form.Item name="bio" label="Tiểu sử">
-          <Input.TextArea rows={3} placeholder="Viết gì đó về bạn" />
-        </Form.Item>
-
-        <Form.Item name="phone" label="Số điện thoại">
+        <Form.Item
+          name="phone"
+          label="Số điện thoại"
+          rules={[
+            {
+              validator: (_, value) => {
+                const normalized = String(value || "").replace(/[\s-]/g, "").trim();
+                if (!normalized) return Promise.resolve();
+                if (!PHONE_REGEX.test(normalized)) {
+                  return Promise.reject(new Error("Số điện thoại không đúng định dạng"));
+                }
+                return Promise.resolve();
+              },
+            },
+          ]}
+        >
           <Input placeholder="Nhập số điện thoại" />
         </Form.Item>
 
@@ -120,37 +164,81 @@ const EditProfileModal = ({ visible, onCancel, profile, onSave }) => {
           </Select>
         </Form.Item>
 
-        <Form.Item name="dateOfBirth" label="Ngày sinh">
-          <DatePicker format="DD/MM/YYYY" />
+        <Form.Item
+          name="dateOfBirth"
+          label="Ngày sinh"
+          rules={[
+            {
+              validator: (_, value) => {
+                if (!value) return Promise.resolve();
+                if (value.isAfter(dayjs().endOf("day"))) {
+                  return Promise.reject(new Error("Ngày sinh không được ở trong tương lai"));
+                }
+                return Promise.resolve();
+              },
+            },
+          ]}
+        >
+          <DatePicker
+            format="DD/MM/YYYY"
+            allowClear
+            disabledDate={(current) => current && current.isAfter(dayjs().endOf("day"))}
+          />
         </Form.Item>
 
-        <Form.Item
-          name="avatar"
-          label="Ảnh đại diện"
-          valuePropName="fileList"
-          getValueFromEvent={(e) => e?.fileList}
-        >
+        <Form.Item label="Ảnh đại diện">
           <Upload
             maxCount={1}
-            beforeUpload={() => false}
+            fileList={avatarFileList}
+            beforeUpload={(file) => {
+              if (!file.type?.startsWith("image/")) {
+                message.error("Chỉ chấp nhận file ảnh cho ảnh đại diện");
+                return Upload.LIST_IGNORE;
+              }
+              return false;
+            }}
             accept="image/*"
             listType="picture"
+            onChange={({ fileList }) => setAvatarFileList(fileList)}
           >
             <Button icon={<UploadOutlined />}>Chọn ảnh đại diện</Button>
           </Upload>
         </Form.Item>
 
         <Form.Item
-          name="cover"
-          label="Ảnh bìa"
-          valuePropName="fileList"
-          getValueFromEvent={(e) => e?.fileList}
+          name="bio"
+          label="Tiểu sử"
+          rules={[
+            {
+              validator: (_, value) => {
+                const chars = String(value || "").trim().length;
+                if (chars > MAX_BIO_CHARS) {
+                  return Promise.reject(
+                    new Error(`Tiểu sử chỉ được tối đa ${MAX_BIO_CHARS} ký tự`),
+                  );
+                }
+                return Promise.resolve();
+              },
+            },
+          ]}
         >
+          <Input.TextArea rows={3} placeholder="Viết gì đó về bạn" maxLength={MAX_BIO_CHARS} showCount />
+        </Form.Item>
+
+        <Form.Item label="Ảnh bìa">
           <Upload
             maxCount={1}
-            beforeUpload={() => false}
+            fileList={coverFileList}
+            beforeUpload={(file) => {
+              if (!file.type?.startsWith("image/")) {
+                message.error("Chỉ chấp nhận file ảnh cho ảnh bìa");
+                return Upload.LIST_IGNORE;
+              }
+              return false;
+            }}
             accept="image/*"
             listType="picture"
+            onChange={({ fileList }) => setCoverFileList(fileList)}
           >
             <Button icon={<UploadOutlined />}>Chọn ảnh bìa</Button>
           </Upload>

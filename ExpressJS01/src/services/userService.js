@@ -67,6 +67,18 @@ const sanitizeText = (value = "") =>
     .replace(/[<>]/g, "")
     .trim();
 
+const MAX_BIO_CHARS = 500;
+const PHONE_REGEX = /^(?:0\d{9,10}|\+84\d{9})$/;
+
+const normalizePhone = (value = "") => String(value).replace(/[\s-]/g, "").trim();
+
+const getLocalDateString = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const persistDeviceSession = async (user, context = {}) => {
   const deviceId = getDeviceId(context);
   await DeviceSession.findOneAndUpdate(
@@ -342,9 +354,52 @@ const updateProfileService = async (userId, updateData) => {
       bio: updateData.bio !== undefined ? sanitizeText(updateData.bio) : undefined,
       address: updateData.address !== undefined ? sanitizeText(updateData.address) : undefined,
       phone: updateData.phone !== undefined ? sanitizeText(updateData.phone) : undefined,
+      avatar: updateData.avatar !== undefined ? sanitizeText(updateData.avatar) : undefined,
+      coverPhoto:
+        updateData.coverPhoto !== undefined ? sanitizeText(updateData.coverPhoto) : undefined,
     };
 
     Object.keys(safeUpdate).forEach((key) => safeUpdate[key] === undefined && delete safeUpdate[key]);
+
+    if (safeUpdate.phone !== undefined) {
+      const normalizedPhone = normalizePhone(safeUpdate.phone);
+      if (normalizedPhone && !PHONE_REGEX.test(normalizedPhone)) {
+        return { EC: 1, EM: "Số điện thoại không đúng định dạng." };
+      }
+      safeUpdate.phone = normalizedPhone;
+    }
+
+    if (safeUpdate.bio !== undefined && safeUpdate.bio.length > MAX_BIO_CHARS) {
+      return { EC: 1, EM: `Tiểu sử chỉ được tối đa ${MAX_BIO_CHARS} ký tự.` };
+    }
+
+    if (safeUpdate.dateOfBirth !== undefined) {
+      const rawDate = String(safeUpdate.dateOfBirth || "").trim();
+
+      if (!rawDate) {
+        safeUpdate.dateOfBirth = null;
+      } else {
+        const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+        if (!datePattern.test(rawDate)) {
+          return { EC: 1, EM: "Ngày sinh không hợp lệ." };
+        }
+
+        const [year, month, day] = rawDate.split("-").map(Number);
+        const parsedDate = new Date(year, month - 1, day);
+        if (
+          parsedDate.getFullYear() !== year ||
+          parsedDate.getMonth() + 1 !== month ||
+          parsedDate.getDate() !== day
+        ) {
+          return { EC: 1, EM: "Ngày sinh không hợp lệ." };
+        }
+
+        if (rawDate > getLocalDateString()) {
+          return { EC: 1, EM: "Ngày sinh không được ở trong tương lai." };
+        }
+        safeUpdate.dateOfBirth = parsedDate;
+      }
+    }
 
     const user = await User.findOneAndUpdate({ _id: userId, deletedAt: null }, safeUpdate, {
       new: true,

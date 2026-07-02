@@ -28,11 +28,10 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowedMimes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-  if (allowedMimes.includes(file.mimetype)) {
+  if (file.mimetype && file.mimetype.startsWith("image/")) {
     cb(null, true);
   } else {
-    cb(new Error("Only image files are allowed"), false);
+    cb(new Error("Chỉ chấp nhận file ảnh (JPG, PNG, GIF, WEBP)."), false);
   }
 };
 
