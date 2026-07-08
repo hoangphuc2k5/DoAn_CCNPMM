@@ -1,16 +1,5 @@
-require("dotenv").config();
-const bcrypt = require("bcrypt");
-const mongoose = require("mongoose");
-const Block = require("../src/models/block");
-const Comment = require("../src/models/comment");
-const Follow = require("../src/models/follow");
-const Friendship = require("../src/models/friendship");
-const Notification = require("../src/models/notification");
-const Post = require("../src/models/post");
-const Reaction = require("../src/models/reaction");
-const Report = require("../src/models/report");
-const User = require("../src/models/user");
-const Group = require("../src/models/group");
+require("./seedSocialDataFull");
+/*
 
 const password = "123456";
 const seedEmails = [
@@ -132,7 +121,8 @@ const run = async () => {
         avatar: item.avatar,
         phone: "0900000000",
         address: "TP. Hồ Chí Minh",
-        gender: "Other",
+        gender: "other",
+        isEmailVerified: true,
       },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     );
@@ -324,3 +314,4 @@ run().catch(async (error) => {
   await mongoose.disconnect();
   process.exit(1);
 });
+*/
